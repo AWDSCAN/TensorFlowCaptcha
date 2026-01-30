@@ -27,13 +27,14 @@ else:
     print("使用基础版CNN模型（3层卷积）")
 
 
-def create_callbacks(model_dir=None, log_dir=None):
+def create_callbacks(model_dir=None, log_dir=None, val_data=None):
     """
     创建训练回调函数
     
     参数:
         model_dir: 模型保存目录
         log_dir: 日志保存目录
+        val_data: 验证数据 (X, y)，用于计算完整匹配准确率
     
     返回:
         回调函数列表
@@ -47,26 +48,45 @@ def create_callbacks(model_dir=None, log_dir=None):
     
     callbacks = []
     
-    # 模型检查点：保存最优模型
+    # 模型检查点：保存最优模型（监控val_loss更可靠）
     checkpoint_path = os.path.join(model_dir, 'best_model.keras')
     checkpoint = keras.callbacks.ModelCheckpoint(
         filepath=checkpoint_path,
-        monitor='val_binary_accuracy',
-        mode='max',
+        monitor='val_loss',  # 改为监控损失
+        mode='min',  # 损失越小越好
         save_best_only=True,
         save_weights_only=False,
         verbose=1
     )
     callbacks.append(checkpoint)
     
-    # 早停：防止过拟合（参考文档：10轮耐心值，监控完整匹配准确率）
-    early_stop = keras.callbacks.EarlyStopping(
-        monitor='val_binary_accuracy',
-        mode='max',
-        patience=10,  # 固定10轮耐心值
+    # 延迟早停：前85轮充分训练，之后才启用早停监控
+    class DelayedEarlyStopping(keras.callbacks.EarlyStopping):
+        """延迟早停回调：在指定轮次之前不触发早停"""
+        def __init__(self, start_epoch=85, **kwargs):
+            super().__init__(**kwargs)
+            self.start_epoch = start_epoch
+        
+        def on_epoch_end(self, epoch, logs=None):
+            if epoch >= self.start_epoch - 1:  # epoch从0开始
+                super().on_epoch_end(epoch, logs)
+            else:
+                # 前85轮不触发早停，只更新最优值
+                current = self.get_monitor_value(logs)
+                if current is None:
+                    return
+                # 更新最优值以便后续比较
+                if self.monitor_op(current - self.min_delta, self.best):
+                    self.best = current
+    
+    early_stop = DelayedEarlyStopping(
+        start_epoch=85,  # 从第85轮开始启用早停
+        monitor='val_loss',  # 监控验证损失
+        mode='min',  # 损失越小越好
+        patience=15,  # 15轮无改进才停止
         verbose=1,
         restore_best_weights=True,
-        min_delta=0.001  # 最小改进阈值
+        min_delta=0.0001  # 最小改进阈值
     )
     callbacks.append(early_stop)
     
@@ -95,42 +115,52 @@ def create_callbacks(model_dir=None, log_dir=None):
     )
     callbacks.append(reduce_lr)
     
-    # 训练进度打印 + 目标准确率自动停止（参考文档：达到95%自动停止）
+    # 训练进度打印（每轮计算完整匹配准确率）
     class TrainingProgress(keras.callbacks.Callback):
-        def __init__(self, target_accuracy=0.95):
+        def __init__(self, val_data):
             super().__init__()
-            self.target_accuracy = target_accuracy
-            self.best_accuracy = 0
+            self.val_images, self.val_labels = val_data
+            self.best_full_match_acc = 0
         
         def on_epoch_end(self, epoch, logs=None):
             logs = logs or {}
-            val_acc = logs.get('val_binary_accuracy', 0)
+            val_loss = logs.get('val_loss', 0)
+            val_binary_acc = logs.get('val_binary_accuracy', 0)
             
-            # 获取当前学习率（兼容TensorFlow Variable对象）
+            # 获取当前学习率
             try:
                 current_lr = float(keras.backend.get_value(self.model.optimizer.learning_rate))
             except:
                 current_lr = float(self.model.optimizer.learning_rate.numpy())
             
+            # 计算完整匹配准确率（每轮都计算，了解真实进度）
+            import numpy as np
+            # 随机采样1000个验证样本计算（加快速度）
+            sample_size = min(1000, len(self.val_images))
+            indices = np.random.choice(len(self.val_images), sample_size, replace=False)
+            sample_images = self.val_images[indices]
+            sample_labels = self.val_labels[indices]
+            
+            predictions = self.model.predict(sample_images, verbose=0)
+            pred_texts = [utils.vector_to_text(pred) for pred in predictions]
+            true_texts = [utils.vector_to_text(label) for label in sample_labels]
+            full_match_acc = utils.calculate_accuracy(true_texts, pred_texts)
+            
             # 打印训练进度
-            print(f"\n[Epoch {epoch+1}] 训练准确率: {logs.get('binary_accuracy', 0):.4f} | "
-                  f"验证准确率: {val_acc:.4f} | "
-                  f"训练损失: {logs.get('loss', 0):.4f} | "
-                  f"验证损失: {logs.get('val_loss', 0):.4f} | "
+            print(f"\n[Epoch {epoch+1}] 训练损失: {logs.get('loss', 0):.4f} | "
+                  f"验证损失: {val_loss:.4f} | "
+                  f"二进制准确率: {val_binary_acc:.4f} | "
+                  f"完整匹配: {full_match_acc*100:.2f}% | "
                   f"学习率: {current_lr:.6f}")
             
-            # 跟踪最佳准确率
-            if val_acc > self.best_accuracy:
-                self.best_accuracy = val_acc
-                improvement = (val_acc - self.best_accuracy) * 100
-                print(f"    ⬆ 验证准确率提升至: {val_acc*100:.2f}% (最佳: {self.best_accuracy*100:.2f}%)")
-            
-            # 达到目标准确率自动停止（参考文档思路）
-            if val_acc >= self.target_accuracy:
-                print(f"\n🎉 达到目标准确率 {self.target_accuracy*100:.0f}%！训练自动停止。")
-                self.model.stop_training = True
+            # 跟踪最佳完整匹配准确率
+            if full_match_acc > self.best_full_match_acc:
+                self.best_full_match_acc = full_match_acc
+                print(f"    ⬆ 完整匹配准确率提升！当前: {full_match_acc*100:.2f}% (历史最佳: {self.best_full_match_acc*100:.2f}%)")
     
-    callbacks.append(TrainingProgress(target_accuracy=0.95))  # 95%目标
+    # 添加训练进度回调（需要验证数据计算完整匹配准确率）
+    if val_data is not None:
+        callbacks.append(TrainingProgress(val_data=val_data))
     
     return callbacks
 
@@ -169,10 +199,17 @@ def train_model(
     print(f"训练样本数: {len(train_images)}")
     print(f"验证样本数: {len(val_images)}")
     print(f"批次大小: {batch_size}")
-    print(f"训练轮数上限: {epochs} (早停耐心值: 10)")
+    print(f"训练轮数上限: {epochs}")
     print(f"初始学习率: {config.LEARNING_RATE}")
-    print(f"目标准确率: 95% (达到自动停止)")
     print(f"优化器: Adam with AMSGrad")
+    print("=" * 80)
+    print("训练策略:")
+    print("  - 前85轮: 充分训练，不触发早停")
+    print("  - 第85轮后: 启用早停监控，15轮无改进自动停止")
+    print("  - 学习率衰减: 3轮无改进降低50%")
+    print("  - 每轮计算: 完整匹配准确率（采样1000个验证样本）")
+    print("  - 模型检查点: 保存val_loss最优模型")
+    print("=" * 80)
     print()
     
     # 训练模型
@@ -301,13 +338,13 @@ def main():
     # 4. 训练模型
     print("步骤 4/5: 训练模型")
     print("-" * 80)
-    callbacks = create_callbacks()
+    callbacks = create_callbacks(val_data=(val_images, val_labels))
     history = train_model(
         model,
         train_data=(train_images, train_labels),
         val_data=(val_images, val_labels),
         callbacks=callbacks,
-        epochs=200  # 200轮上限 + 10轮早停
+        epochs=200  # 200轮上限 + 15轮早停
     )
     print()
     
