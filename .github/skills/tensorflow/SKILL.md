@@ -5,7 +5,7 @@ description: TensorFlow2 ruler
 
 # TensorFlow2 ruler
 
-以TensorFlow2.x为基础的验证码识别程序变成如下形式：引入了大量用户可控参数以备精准控制验证码识别过程；使用了卷积神经网络（CNN）来识别验证码，使用三层卷积 + 全连接层的经典CNN架构。框架选用TensorFlow 2.x + Keras，激活函数选用ReLU，池化层选用 MaxPooling 2×2，正则化选用 Dropout(0.25)，损失函数选用 Sigmoid 交叉熵，优化器选用 Adam (lr=0.001)。
+以TensorFlow2.16.1为基础的验证码识别程序变成如下形式：引入了大量用户可控参数以备精准控制验证码识别过程；使用了卷积神经网络（CNN）来识别验证码，使用三层卷积 + 全连接层的经典CNN架构。框架选用TensorFlow 2.x + Keras，激活函数选用ReLU，池化层选用 MaxPooling 2×2，正则化选用 Dropout(0.25)，损失函数选用 Sigmoid 交叉熵，优化器选用 Adam (lr=0.001)。
 其详细过程如下：1.  输入验证码图像（200×50）。
 2.  [卷积层1] 32个3×3过滤器 → ReLU → MaxPool(2×2) → Dropout(0.25)。
 3.  [卷积层2] 64个3×3过滤器 → ReLU → MaxPool(2×2) → Dropout(0.25)。
