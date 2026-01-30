@@ -116,12 +116,18 @@ def calculate_accuracy(y_true, y_pred):
     计算验证码识别准确率（完全匹配）
     
     参数:
-        y_true: 真实标签，形状 (batch_size, MAX_CAPTCHA × CHAR_SET_LEN)
-        y_pred: 预测标签，形状 (batch_size, MAX_CAPTCHA × CHAR_SET_LEN)
+        y_true: 真实标签（文本列表或向量数组）
+        y_pred: 预测标签（文本列表或向量数组）
     
     返回:
         准确率（0-1之间的浮点数）
     """
+    # 如果是列表，直接处理
+    if isinstance(y_true, (list, tuple)):
+        correct = sum(1 for t, p in zip(y_true, y_pred) if t == p)
+        return correct / len(y_true) if len(y_true) > 0 else 0.0
+    
+    # 如果是numpy数组
     if len(y_true.shape) == 1:
         y_true = y_true.reshape(1, -1)
     if len(y_pred.shape) == 1:
