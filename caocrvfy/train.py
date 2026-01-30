@@ -106,12 +106,18 @@ def create_callbacks(model_dir=None, log_dir=None):
             logs = logs or {}
             val_acc = logs.get('val_binary_accuracy', 0)
             
+            # 获取当前学习率（兼容TensorFlow Variable对象）
+            try:
+                current_lr = float(keras.backend.get_value(self.model.optimizer.learning_rate))
+            except:
+                current_lr = float(self.model.optimizer.learning_rate.numpy())
+            
             # 打印训练进度
             print(f"\n[Epoch {epoch+1}] 训练准确率: {logs.get('binary_accuracy', 0):.4f} | "
                   f"验证准确率: {val_acc:.4f} | "
                   f"训练损失: {logs.get('loss', 0):.4f} | "
                   f"验证损失: {logs.get('val_loss', 0):.4f} | "
-                  f"学习率: {float(self.model.optimizer.learning_rate):.6f}")
+                  f"学习率: {current_lr:.6f}")
             
             # 跟踪最佳准确率
             if val_acc > self.best_accuracy:
@@ -167,13 +173,6 @@ def train_model(
     print(f"初始学习率: {config.LEARNING_RATE}")
     print(f"目标准确率: 95% (达到自动停止)")
     print(f"优化器: Adam with AMSGrad")
-    print("=" * 80)
-    print("训练策略（参考文档优化）:")
-    print("  - 早停: 10轮无改进自动停止")
-    print("  - 学习率衰减: 3轮无改进降低50%")
-    print("  - 目标准确率: 达到95%自动停止")
-    print("  - 模型检查点: 保存最优模型")
-    print("=" * 80)
     print()
     
     # 训练模型
