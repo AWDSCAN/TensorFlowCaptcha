@@ -24,7 +24,7 @@ class CaptchaPredictor:
         参数:
             model_path: 模型文件路径
         """
-        self.model_path = model_path or os.path.join(config.MODEL_DIR, 'best_model.h5')
+        self.model_path = model_path or os.path.join(config.MODEL_DIR, 'best_model.keras')
         self.model = None
         
         # 加载模型

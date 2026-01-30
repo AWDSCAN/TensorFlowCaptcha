@@ -388,8 +388,8 @@ python predict.py --dir ../captcha/img
 查看保存的模型：
 ```bash
 ls -lh caocrvfy/models/
-# best_model.h5      - 验证集最优模型
-# final_model.h5     - 最终模型
+# best_model.keras      - 验证集最优模型
+# final_model.keras     - 最终模型
 ```
 
 查看日志：

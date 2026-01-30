@@ -36,7 +36,7 @@ def create_callbacks(model_dir=None, log_dir=None):
     callbacks = []
     
     # 模型检查点：保存最优模型
-    checkpoint_path = os.path.join(model_dir, 'best_model.h5')
+    checkpoint_path = os.path.join(model_dir, 'best_model.keras')
     checkpoint = keras.callbacks.ModelCheckpoint(
         filepath=checkpoint_path,
         monitor='val_binary_accuracy',
@@ -215,7 +215,7 @@ def save_model(model, save_path=None):
         model: Keras模型
         save_path: 保存路径
     """
-    save_path = save_path or os.path.join(config.MODEL_DIR, 'final_model.h5')
+    save_path = save_path or os.path.join(config.MODEL_DIR, 'final_model.keras')
     
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     model.save(save_path)

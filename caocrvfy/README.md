@@ -59,7 +59,7 @@ python train.py
 - 自动加载 `captcha/img/` 目录下的验证码图片
 - 按 80/20 比例划分训练集和验证集
 - 训练 CNN 模型
-- 保存最优模型到 `models/best_model.h5`
+- 保存最优模型到 `models/best_model.keras`
 - 生成 TensorBoard 日志到 `logs/`
 
 ### 3. 预测验证码
