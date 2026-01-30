@@ -6,13 +6,25 @@
 """
 
 import os
+import sys
 import time
 import tensorflow as tf
 from tensorflow import keras
 import config
 from data_loader import CaptchaDataLoader
-from model import create_cnn_model, compile_model, print_model_summary
 import utils
+
+# 选择使用增强版模型还是基础模型
+USE_ENHANCED_MODEL = True  # 改为True使用增强版模型
+
+if USE_ENHANCED_MODEL:
+    from model_enhanced import create_enhanced_cnn_model as create_model
+    from model_enhanced import compile_model, print_model_summary
+    print("使用增强版CNN模型（5层卷积 + BatchNorm + 更大FC层）")
+else:
+    from model import create_cnn_model as create_model
+    from model import compile_model, print_model_summary
+    print("使用基础版CNN模型（3层卷积）")
 
 
 def create_callbacks(model_dir=None, log_dir=None):
@@ -47,13 +59,14 @@ def create_callbacks(model_dir=None, log_dir=None):
     )
     callbacks.append(checkpoint)
     
-    # 早停：防止过拟合
+    # 早停：防止过拟合（参考文档：10轮耐心值，监控完整匹配准确率）
     early_stop = keras.callbacks.EarlyStopping(
         monitor='val_binary_accuracy',
         mode='max',
-        patience=config.EARLY_STOPPING_PATIENCE,
+        patience=10,  # 固定10轮耐心值
         verbose=1,
-        restore_best_weights=True
+        restore_best_weights=True,
+        min_delta=0.001  # 最小改进阈值
     )
     callbacks.append(early_stop)
     
@@ -70,27 +83,48 @@ def create_callbacks(model_dir=None, log_dir=None):
     )
     callbacks.append(tensorboard)
     
-    # 学习率衰减
+    # 学习率衰减（参考文档：更激进的衰减策略）
     reduce_lr = keras.callbacks.ReduceLROnPlateau(
         monitor='val_loss',
         mode='min',
-        factor=0.5,
-        patience=5,
-        min_lr=1e-6,
-        verbose=1
+        factor=0.5,  # 衰减因子
+        patience=3,  # 3轮无改进即衰减（原5→3，更快响应）
+        min_lr=1e-7,  # 最小学习率
+        verbose=1,
+        cooldown=2  # 衰减后冷却2轮
     )
     callbacks.append(reduce_lr)
     
-    # 训练进度打印
+    # 训练进度打印 + 目标准确率自动停止（参考文档：达到95%自动停止）
     class TrainingProgress(keras.callbacks.Callback):
+        def __init__(self, target_accuracy=0.95):
+            super().__init__()
+            self.target_accuracy = target_accuracy
+            self.best_accuracy = 0
+        
         def on_epoch_end(self, epoch, logs=None):
             logs = logs or {}
+            val_acc = logs.get('val_binary_accuracy', 0)
+            
+            # 打印训练进度
             print(f"\n[Epoch {epoch+1}] 训练准确率: {logs.get('binary_accuracy', 0):.4f} | "
-                  f"验证准确率: {logs.get('val_binary_accuracy', 0):.4f} | "
+                  f"验证准确率: {val_acc:.4f} | "
                   f"训练损失: {logs.get('loss', 0):.4f} | "
-                  f"验证损失: {logs.get('val_loss', 0):.4f}")
+                  f"验证损失: {logs.get('val_loss', 0):.4f} | "
+                  f"学习率: {float(self.model.optimizer.learning_rate):.6f}")
+            
+            # 跟踪最佳准确率
+            if val_acc > self.best_accuracy:
+                self.best_accuracy = val_acc
+                improvement = (val_acc - self.best_accuracy) * 100
+                print(f"    ⬆ 验证准确率提升至: {val_acc*100:.2f}% (最佳: {self.best_accuracy*100:.2f}%)")
+            
+            # 达到目标准确率自动停止（参考文档思路）
+            if val_acc >= self.target_accuracy:
+                print(f"\n🎉 达到目标准确率 {self.target_accuracy*100:.0f}%！训练自动停止。")
+                self.model.stop_training = True
     
-    callbacks.append(TrainingProgress())
+    callbacks.append(TrainingProgress(target_accuracy=0.95))  # 95%目标
     
     return callbacks
 
@@ -129,8 +163,16 @@ def train_model(
     print(f"训练样本数: {len(train_images)}")
     print(f"验证样本数: {len(val_images)}")
     print(f"批次大小: {batch_size}")
-    print(f"训练轮数: {epochs}")
-    print(f"学习率: {config.LEARNING_RATE}")
+    print(f"训练轮数上限: {epochs} (早停耐心值: 10)")
+    print(f"初始学习率: {config.LEARNING_RATE}")
+    print(f"目标准确率: 95% (达到自动停止)")
+    print(f"优化器: Adam with AMSGrad")
+    print("=" * 80)
+    print("训练策略（参考文档优化）:")
+    print("  - 早停: 10轮无改进自动停止")
+    print("  - 学习率衰减: 3轮无改进降低50%")
+    print("  - 目标准确率: 达到95%自动停止")
+    print("  - 模型检查点: 保存最优模型")
     print("=" * 80)
     print()
     
@@ -252,7 +294,7 @@ def main():
     # 3. 创建模型
     print("步骤 3/5: 创建模型")
     print("-" * 80)
-    model = create_cnn_model()
+    model = create_model()
     model = compile_model(model)
     print_model_summary(model)
     print()
@@ -265,7 +307,8 @@ def main():
         model,
         train_data=(train_images, train_labels),
         val_data=(val_images, val_labels),
-        callbacks=callbacks
+        callbacks=callbacks,
+        epochs=200  # 200轮上限 + 10轮早停
     )
     print()
     

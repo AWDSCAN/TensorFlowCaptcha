@@ -60,19 +60,19 @@ OUTPUT_SIZE = MAX_CAPTCHA * CHAR_SET_LEN  # 8 × 63 = 504
 
 # ==================== 训练参数 ====================
 # 批次大小
-BATCH_SIZE = 32
+BATCH_SIZE = 64  # 增加到64，充分利用GPU
 
 # 训练轮数
-EPOCHS = 50
+EPOCHS = 150  # 增加到150轮，强干扰需要更多训练
 
 # 学习率
-LEARNING_RATE = 0.001
+LEARNING_RATE = 0.0003  # 降低初始学习率，更稳定
 
 # 验证集比例
 VALIDATION_SPLIT = 0.2
 
 # 早停策略
-EARLY_STOPPING_PATIENCE = 10  # 如果10个epoch验证集准确率不提升则停止
+EARLY_STOPPING_PATIENCE = 20  # 增加耐心值到20轮
 
 # ==================== 数据增强参数 ====================
 # 是否使用数据增强
