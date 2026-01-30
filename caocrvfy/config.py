@@ -34,14 +34,15 @@ ALPHA_UPPER = string.ascii_uppercase  # A-Z
 ALPHA_LOWER = string.ascii_lowercase  # a-z
 ALPHA_ALL = string.ascii_letters  # A-Z + a-z
 
-# 完整字符集（数字+大小写字母）
-CHAR_SET = DIGITS + ALPHA_ALL  # 0-9 + A-Z + a-z
+# 完整字符集（数字+大小写字母+填充字符）
+PADDING_CHAR = ' '  # 使用空格作为填充字符
+CHAR_SET = DIGITS + ALPHA_ALL + PADDING_CHAR  # 0-9 + A-Z + a-z + ' '
 
 # 字符集大小
-CHAR_SET_LEN = len(CHAR_SET)  # 62个字符
+CHAR_SET_LEN = len(CHAR_SET)  # 63个字符
 
 # 验证码最大长度
-MAX_CAPTCHA = 8  # 支持4-8位不定长验证码
+MAX_CAPTCHA = 8  # 支持1-8位不定长验证码
 
 # ==================== 模型架构参数 ====================
 # 卷积层配置（三层卷积架构）
@@ -55,7 +56,7 @@ FC_UNITS = 1024  # 全连接层神经元数量
 FC_DROPOUT_RATE = 0.5  # 全连接层 Dropout 比率
 
 # 输出层配置
-OUTPUT_SIZE = MAX_CAPTCHA * CHAR_SET_LEN  # 8 × 62 = 496
+OUTPUT_SIZE = MAX_CAPTCHA * CHAR_SET_LEN  # 8 × 63 = 504
 
 # ==================== 训练参数 ====================
 # 批次大小

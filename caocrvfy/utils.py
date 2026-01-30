@@ -41,10 +41,10 @@ def text_to_vector(text):
     """
     vector = np.zeros(config.MAX_CAPTCHA * config.CHAR_SET_LEN, dtype=np.float32)
     
-    for i, char in enumerate(text):
-        if i >= config.MAX_CAPTCHA:
-            break
-        
+    # 将文本填充到MAX_CAPTCHA长度（短验证码用空格填充）
+    padded_text = text.ljust(config.MAX_CAPTCHA, config.PADDING_CHAR)
+    
+    for i, char in enumerate(padded_text[:config.MAX_CAPTCHA]):
         # 查找字符在字符集中的索引
         if char in config.CHAR_SET:
             char_idx = config.CHAR_SET.index(char)
@@ -75,13 +75,12 @@ def vector_to_text(vector):
     for i in range(config.MAX_CAPTCHA):
         # 找到每个位置概率最大的字符索引
         char_idx = np.argmax(vector[i])
-        # 如果该位置的最大概率很小，说明该位置没有字符
-        if vector[i][char_idx] < 0.5:
-            continue
         char = config.CHAR_SET[char_idx]
         text.append(char)
     
-    return ''.join(text)
+    # 去除尾部的填充字符（空格）
+    result = ''.join(text).rstrip(config.PADDING_CHAR)
+    return result
 
 
 def load_image(image_path):
