@@ -137,18 +137,19 @@ class CaptchaGenerator:
     
     def generate_hash(self, text):
         """
-        生成文件名hash
-        格式：时间戳 + 验证码内容的MD5
+        生成文件名hash (32位MD5)
+        格式：时间戳 + 验证码内容 + 随机数的MD5完整哈希
         """
         timestamp = str(int(time.time() * 1000000))  # 微秒级时间戳
-        content = timestamp + text
+        random_str = str(random.randint(100000, 999999))  # 6位随机数
+        content = timestamp + text + random_str
         hash_obj = hashlib.md5(content.encode('utf-8'))
-        return hash_obj.hexdigest()[:12]  # 取前12位
+        return hash_obj.hexdigest()  # 返回完整的32位哈希
     
     def generate_filename(self, text):
         """
         生成文件名
-        格式：验证码内容-hash.png
+        格式：验证码内容-32位hash.png
         """
         file_hash = self.generate_hash(text)
         return f"{text}-{file_hash}.png"
