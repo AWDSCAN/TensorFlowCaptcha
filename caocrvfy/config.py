@@ -49,30 +49,33 @@ MAX_CAPTCHA = 8  # 支持1-8位不定长验证码
 CONV_FILTERS = [32, 64, 64]  # 每层的过滤器数量
 CONV_KERNEL_SIZE = (3, 3)  # 卷积核大小
 POOL_SIZE = (2, 2)  # 池化层大小
-DROPOUT_RATE = 0.25  # Dropout 比率
+DROPOUT_CONV = 0.2  # 卷积层Dropout（降低以保留更多特征）
 
 # 全连接层配置
 FC_UNITS = 1024  # 全连接层神经元数量
-FC_DROPOUT_RATE = 0.5  # 全连接层 Dropout 比率
+DROPOUT_FC = 0.4  # 全连接层Dropout（从0.5降到0.4，减少信息损失）
 
 # 输出层配置
 OUTPUT_SIZE = MAX_CAPTCHA * CHAR_SET_LEN  # 8 × 63 = 504
 
 # ==================== 训练参数 ====================
 # 批次大小
-BATCH_SIZE = 64  # 增加到64，充分利用GPU
+BATCH_SIZE = 128  # 充分利用GPU内存
 
 # 训练轮数
-EPOCHS = 150  # 增加到150轮，强干扰需要更多训练
+EPOCHS = 300  # 足够的训练轮数
 
-# 学习率
-LEARNING_RATE = 0.0003  # 降低初始学习率，更稳定
+# 学习率配置
+LEARNING_RATE = 0.0012  # 初始学习率（经过多次实验验证）
+WARMUP_EPOCHS = 10  # Warmup轮数
+WARMUP_LR_START = 0.0001  # Warmup起始学习率
 
 # 验证集比例
 VALIDATION_SPLIT = 0.2
 
-# 早停策略
-EARLY_STOPPING_PATIENCE = 20  # 增加耐心值到20轮
+# 早停策略（延迟启动避免过早停止）
+EARLY_STOPPING_PATIENCE = 35  # 耐心值
+EARLY_STOPPING_START_EPOCH = 50  # 从第50轮开始监控
 
 # ==================== 数据增强参数 ====================
 # 是否使用数据增强

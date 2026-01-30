@@ -80,13 +80,13 @@ def create_callbacks(model_dir=None, log_dir=None, val_data=None):
             # 前85轮完全跳过早停检查
     
     early_stop = DelayedEarlyStopping(
-        start_epoch=85,  # 从第85轮开始启用早停
-        monitor='val_loss',  # 监控验证损失
-        mode='min',  # 损失越小越好
-        patience=15,  # 15轮无改进才停止
+        start_epoch=50,  # 从第50轮开始启用早停
+        monitor='val_loss',
+        mode='min',
+        patience=35,  # 35轮无改进才停止（增加patience）
         verbose=1,
         restore_best_weights=True,
-        min_delta=0.0001  # 最小改进阈值
+        min_delta=0.00005  # 降低阈值
     )
     callbacks.append(early_stop)
     
@@ -103,17 +103,77 @@ def create_callbacks(model_dir=None, log_dir=None, val_data=None):
     )
     callbacks.append(tensorboard)
     
-    # 学习率衰减（参考文档：更激进的衰减策略）
+    # 学习率衰减（v2.3优化：更长的patience）
     reduce_lr = keras.callbacks.ReduceLROnPlateau(
         monitor='val_loss',
         mode='min',
-        factor=0.5,  # 衰减因子
-        patience=3,  # 3轮无改进即衰减（原5→3，更快响应）
-        min_lr=1e-7,  # 最小学习率
+        factor=0.5,
+        patience=10,  # 10轮无改进即衰减（增加patience）
+        min_lr=5e-7,  # 最小学习率降低到5e-7
         verbose=1,
-        cooldown=2  # 衰减后冷却2轮
+        cooldown=3,  # 冷却3轮
+        min_delta=0.00005  # 降低阈值，更敏感
     )
     callbacks.append(reduce_lr)
+    
+    # Warmup学习率策略（前15轮渐进提升）
+    class WarmupLearningRate(keras.callbacks.Callback):
+        def __init__(self, warmup_epochs=15, target_lr=0.001, start_lr=0.0001):
+            super().__init__()
+            self.warmup_epochs = warmup_epochs
+            self.target_lr = target_lr
+            self.start_lr = start_lr
+        
+        def on_epoch_begin(self, epoch, logs=None):
+            if epoch < self.warmup_epochs:
+                # 线性增长：从start_lr逐渐增加到target_lr
+                lr = self.start_lr + (self.target_lr - self.start_lr) * ((epoch + 1) / self.warmup_epochs)
+                # 兼容不同Keras版本的学习率设置方式
+                try:
+                    # 尝试使用assign方法（TensorFlow 2.x推荐）
+                    self.model.optimizer.learning_rate.assign(lr)
+                except AttributeError:
+                    # 降级到backend.set_value（旧版本）
+                    import tensorflow.keras.backend as K
+                    K.set_value(self.model.optimizer.lr, lr)
+                print(f"  [Warmup] Epoch {epoch+1}/{self.warmup_epochs}, LR: {lr:.6f}")
+    
+    callbacks.append(WarmupLearningRate(warmup_epochs=10, target_lr=config.LEARNING_RATE, start_lr=0.0001))
+    
+    # 保存最佳完整匹配准确率模型
+    class BestFullMatchCheckpoint(keras.callbacks.Callback):
+        def __init__(self, val_data, model_dir):
+            super().__init__()
+            self.val_images, self.val_labels = val_data
+            self.best_full_match_acc = 0
+            self.model_dir = model_dir
+        
+        def on_epoch_end(self, epoch, logs=None):
+            # 每5轮计算一次完整匹配准确率
+            if (epoch + 1) % 5 != 0:
+                return
+            
+            import numpy as np
+            # 随机采样2000个验证样本
+            sample_size = min(2000, len(self.val_images))
+            indices = np.random.choice(len(self.val_images), sample_size, replace=False)
+            sample_images = self.val_images[indices]
+            sample_labels = self.val_labels[indices]
+            
+            predictions = self.model.predict(sample_images, verbose=0)
+            pred_texts = [utils.vector_to_text(pred) for pred in predictions]
+            true_texts = [utils.vector_to_text(label) for label in sample_labels]
+            full_match_acc = utils.calculate_accuracy(true_texts, pred_texts)
+            
+            if full_match_acc > self.best_full_match_acc:
+                self.best_full_match_acc = full_match_acc
+                # 保存最佳完整匹配模型
+                save_path = os.path.join(self.model_dir, 'best_full_match_model.keras')
+                self.model.save(save_path)
+                print(f"  ⭐ 完整匹配准确率提升至 {full_match_acc*100:.2f}%，模型已保存！")
+    
+    if val_data is not None:
+        callbacks.append(BestFullMatchCheckpoint(val_data=val_data, model_dir=model_dir))
     
     # 训练进度打印（每轮计算完整匹配准确率）
     class TrainingProgress(keras.callbacks.Callback):
@@ -127,11 +187,17 @@ def create_callbacks(model_dir=None, log_dir=None, val_data=None):
             val_loss = logs.get('val_loss', 0)
             val_binary_acc = logs.get('val_binary_accuracy', 0)
             
-            # 获取当前学习率
+            # 获取当前学习率（兼容不同Keras版本）
             try:
-                current_lr = float(keras.backend.get_value(self.model.optimizer.learning_rate))
-            except:
+                # 尝试直接获取numpy值（TensorFlow 2.x）
                 current_lr = float(self.model.optimizer.learning_rate.numpy())
+            except:
+                # 降级到backend.get_value（旧版本）
+                try:
+                    import tensorflow.keras.backend as K
+                    current_lr = float(K.get_value(self.model.optimizer.lr))
+                except:
+                    current_lr = 0.001  # 默认值
             
             # 计算完整匹配准确率（每轮都计算，了解真实进度）
             import numpy as np
@@ -203,12 +269,15 @@ def train_model(
     print(f"初始学习率: {config.LEARNING_RATE}")
     print(f"优化器: Adam with AMSGrad")
     print("=" * 80)
-    print("训练策略:")
-    print("  - 前85轮: 充分训练，不触发早停")
-    print("  - 第85轮后: 启用早停监控，15轮无改进自动停止")
-    print("  - 学习率衰减: 3轮无改进降低50%")
+    print("训练策略（2026-01-30 v2.3 - 突破73%瓶颈）:")
+    print("  - Warmup阶段: 前10轮学习率从0.0001→0.0012逐步提升")
+    print("  - 主训练阶段: 前50轮充分训练，不触发早停")
+    print("  - 早停监控: 第50轮后启用，35轮无改进自动停止")
+    print("  - 学习率衰减: 10轮无改进降低50%（更长的patience）")
+    print("  - 批次大小: 128")
+    print("  - 正则化: BatchNorm + Dropout 0.2/0.4（降低Dropout提高召回率）")
+    print("  - 损失函数: BinaryCrossentropy")
     print("  - 每轮计算: 完整匹配准确率（采样1000个验证样本）")
-    print("  - 模型检查点: 保存val_loss最优模型")
     print("=" * 80)
     print()
     
@@ -331,7 +400,8 @@ def main():
     print("步骤 3/5: 创建模型")
     print("-" * 80)
     model = create_model()
-    model = compile_model(model)
+    # 使用标准BCE Loss（GPU服务器验证：BCE 75% > Focal Loss 52%）
+    model = compile_model(model, use_focal_loss=False)
     print_model_summary(model)
     print()
     

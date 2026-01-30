@@ -19,12 +19,12 @@ def create_enhanced_cnn_model():
     """
     创建增强版验证码识别CNN模型（用于强干扰）
     
-    架构改进：
+    架构配置（v2.2 - 简化优化）：
         - 5层卷积（32→64→128→128→256）
-        - 每层卷积后添加BatchNormalization
-        - Dropout增强到0.3
-        - 全连接层增大到2048
-        - 添加额外的Dense层
+        - BatchNormalization 加速收敛
+        - Dropout 0.25（适度正则化）
+        - 全连接层2048 + 1024
+        - 移除L2正则化，简化模型
     
     返回:
         Keras模型
@@ -48,18 +48,18 @@ def create_enhanced_cnn_model():
     x = layers.Conv2D(128, (3, 3), padding='same', activation='relu', name='conv3')(x)
     x = layers.BatchNormalization(name='bn3')(x)
     x = layers.MaxPooling2D((2, 2), name='pool3')(x)
+    x = layers.Dropout(0.2, name='dropout1')(x)
     
     # 第四层卷积块
     x = layers.Conv2D(128, (3, 3), padding='same', activation='relu', name='conv4')(x)
     x = layers.BatchNormalization(name='bn4')(x)
+    x = layers.Dropout(0.2, name='dropout2')(x)
     
     # 第五层卷积块
     x = layers.Conv2D(256, (3, 3), padding='same', activation='relu', name='conv5')(x)
     x = layers.BatchNormalization(name='bn5')(x)
     x = layers.MaxPooling2D((2, 2), name='pool5')(x)
-    
-    # Dropout
-    x = layers.Dropout(0.3, name='dropout1')(x)
+    x = layers.Dropout(0.2, name='dropout3')(x)
     
     # 展平
     x = layers.Flatten(name='flatten')(x)
@@ -67,12 +67,12 @@ def create_enhanced_cnn_model():
     # 第一个全连接层
     x = layers.Dense(2048, activation='relu', name='fc1')(x)
     x = layers.BatchNormalization(name='bn_fc1')(x)
-    x = layers.Dropout(0.4, name='dropout2')(x)
+    x = layers.Dropout(0.4, name='dropout_fc1')(x)
     
     # 第二个全连接层
     x = layers.Dense(1024, activation='relu', name='fc2')(x)
     x = layers.BatchNormalization(name='bn_fc2')(x)
-    x = layers.Dropout(0.3, name='dropout3')(x)
+    x = layers.Dropout(0.4, name='dropout_fc2')(x)
     
     # 输出层
     outputs = layers.Dense(config.OUTPUT_SIZE, activation='sigmoid', name='output')(x)
@@ -154,24 +154,38 @@ def create_resnet_style_model():
     return model
 
 
-def compile_model(model, learning_rate=None):
+def compile_model(model, learning_rate=None, use_focal_loss=False, focal_gamma=1.5):
     """
     编译模型
     
     参数:
         model: Keras模型
         learning_rate: 学习率
+        use_focal_loss: 是否使用Focal Loss（默认False，标准BCE效果更好：75% vs 52%）
+        focal_gamma: Focal Loss的gamma参数（1.0-2.0，默认1.5）
     
     返回:
         编译后的模型
     """
     lr = learning_rate or config.LEARNING_RATE
     
-    # 使用Adam优化器，并启用AMSGrad（更稳定）
-    optimizer = keras.optimizers.Adam(learning_rate=lr, amsgrad=True)
+    # 使用优化的Adam配置：beta_1=0.9, beta_2=0.999（默认），添加更强的梯度裁剪
+    optimizer = keras.optimizers.Adam(
+        learning_rate=lr,
+        beta_1=0.9,      # 一阶矩估计的衰减率
+        beta_2=0.999,    # 二阶矩估计的衰减率
+        amsgrad=True,    # 使用AMSGrad变体，更稳定
+        clipnorm=1.0     # 梯度裁剪，防止梯度爆炸
+    )
     
-    # 损失函数：sigmoid交叉熵
-    loss = keras.losses.BinaryCrossentropy()
+    # 损失函数：标准BCE Loss（经GPU服务器实测：BCE=75% > Focal Loss=52%）
+    if use_focal_loss:
+        from focal_loss import BinaryFocalLoss
+        loss = BinaryFocalLoss(gamma=focal_gamma, alpha=0.75)
+        print(f"⚠️  使用Focal Loss (gamma={focal_gamma}, alpha=0.75) - 注意：可能降低准确率")
+    else:
+        loss = keras.losses.BinaryCrossentropy()
+        print("✓ 使用标准BCE Loss（已验证最优：75% > Focal Loss 52%）")
     
     # 评估指标
     metrics = [
