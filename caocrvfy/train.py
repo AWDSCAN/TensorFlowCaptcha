@@ -66,18 +66,18 @@ def create_callbacks(model_dir=None, log_dir=None, val_data=None):
         def __init__(self, start_epoch=85, **kwargs):
             super().__init__(**kwargs)
             self.start_epoch = start_epoch
+            self.delayed_mode = True  # 标记是否处于延迟模式
         
         def on_epoch_end(self, epoch, logs=None):
-            if epoch >= self.start_epoch - 1:  # epoch从0开始
+            # 只在达到start_epoch后才调用父类的早停逻辑
+            if epoch >= self.start_epoch - 1:  # epoch从0开始，第85轮时epoch=84
+                if self.delayed_mode:
+                    # 第一次启用早停时，打印提示信息
+                    print(f"\n⏰ 已达到第{self.start_epoch}轮，启用早停监控（耐心值: {self.patience}轮）")
+                    self.delayed_mode = False
+                # 调用父类的早停逻辑
                 super().on_epoch_end(epoch, logs)
-            else:
-                # 前85轮不触发早停，只更新最优值
-                current = self.get_monitor_value(logs)
-                if current is None:
-                    return
-                # 更新最优值以便后续比较
-                if self.monitor_op(current - self.min_delta, self.best):
-                    self.best = current
+            # 前85轮完全跳过早停检查
     
     early_stop = DelayedEarlyStopping(
         start_epoch=85,  # 从第85轮开始启用早停
