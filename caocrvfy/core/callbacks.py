@@ -146,11 +146,12 @@ class StepBasedCallbacks(keras.callbacks.Callback):
     - 每save_step步保存checkpoint
     - 每validation_steps步验证
     - 多条件终止：accuracy AND loss AND steps
+    - 自动清理旧checkpoint，只保留最近N个
     
     参考：captcha_trainer/trains.py的achieve_cond逻辑
     """
     def __init__(self, val_data, model_dir, save_step=100, validation_steps=500,
-                 end_acc=0.95, end_loss=0.01, max_steps=50000):
+                 end_acc=0.95, end_loss=0.01, max_steps=50000, max_checkpoints=5):
         """
         参数:
             val_data: 验证数据 (X, y)
@@ -160,6 +161,7 @@ class StepBasedCallbacks(keras.callbacks.Callback):
             end_acc: 目标准确率
             end_loss: 目标损失
             max_steps: 最大步数
+            max_checkpoints: 最多保留的checkpoint数量（默认5个）
         """
         super().__init__()
         self.val_images, self.val_labels = val_data
@@ -169,9 +171,11 @@ class StepBasedCallbacks(keras.callbacks.Callback):
         self.end_acc = end_acc
         self.end_loss = end_loss
         self.max_steps = max_steps
+        self.max_checkpoints = max_checkpoints
         self.current_step = 0
         self.best_val_acc = 0
         self.best_val_loss = float('inf')
+        self.checkpoint_files = []  # 记录已保存的checkpoint文件
     
     def on_batch_end(self, batch, logs=None):
         """每个batch结束时调用"""
@@ -183,6 +187,19 @@ class StepBasedCallbacks(keras.callbacks.Callback):
             checkpoint_path = os.path.join(self.model_dir, f'checkpoint_step_{self.current_step}.keras')
             self.model.save(checkpoint_path)
             print(f"\n  💾 Step {self.current_step}: 保存checkpoint (loss={logs.get('loss', 0):.4f})")
+            
+            # 记录checkpoint文件
+            self.checkpoint_files.append(checkpoint_path)
+            
+            # 清理旧checkpoint，只保留最近的N个
+            if len(self.checkpoint_files) > self.max_checkpoints:
+                old_checkpoint = self.checkpoint_files.pop(0)
+                try:
+                    if os.path.exists(old_checkpoint):
+                        os.remove(old_checkpoint)
+                        print(f"  🗑️  删除旧checkpoint: {os.path.basename(old_checkpoint)}")
+                except Exception as e:
+                    print(f"  ⚠️  删除checkpoint失败: {e}")
         
         # 每validation_steps步验证
         if self.current_step % self.validation_steps == 0:
@@ -269,7 +286,9 @@ class StepBasedCallbacks(keras.callbacks.Callback):
 
 
 def create_callbacks(model_dir, log_dir, val_data, 
-                     use_step_based=True, use_early_stopping=False):
+                     use_step_based=True, use_early_stopping=False,
+                     checkpoint_save_step=500, validation_steps=500,
+                     max_checkpoints_keep=5):
     """
     创建训练回调函数（模块化设计）
     
@@ -282,6 +301,9 @@ def create_callbacks(model_dir, log_dir, val_data,
         val_data: 验证数据 (X, y)
         use_step_based: 是否使用step-based策略
         use_early_stopping: 是否使用早停（不建议与step-based同时使用）
+        checkpoint_save_step: checkpoint保存间隔（步）- 默认500步（避免磁盘占满）
+        validation_steps: 验证间隔（步）- 默认500步
+        max_checkpoints_keep: 最多保留的checkpoint数量（默认5个）
     
     返回:
         回调函数列表
@@ -321,14 +343,15 @@ def create_callbacks(model_dir, log_dir, val_data,
         step_based = StepBasedCallbacks(
             val_data=val_data,
             model_dir=model_dir,
-            save_step=100,
-            validation_steps=500,
+            save_step=checkpoint_save_step,  # 使用配置的保存间隔
+            validation_steps=validation_steps,
             end_acc=0.80,
             end_loss=0.05,
-            max_steps=50000
+            max_steps=50000,
+            max_checkpoints=max_checkpoints_keep  # 只保留N个checkpoint
         )
         callbacks.append(step_based)
-        print("✓ 启用Step-based训练策略（每500步验证，每100步保存）")
+        print(f"✓ 启用Step-based训练策略（每{validation_steps}步验证，每{checkpoint_save_step}步保存，保留{max_checkpoints_keep}个checkpoint）")
     
     # 4. 早停（可选，不建议与step-based同时使用）
     if use_early_stopping and not use_step_based:

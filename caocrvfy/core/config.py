@@ -13,8 +13,8 @@ import string
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # 验证码图片目录
-CAPTCHA_DIR = os.path.join(PROJECT_ROOT, 'captcha', 'img')
-
+# CAPTCHA_DIR = os.path.join(PROJECT_ROOT, 'captcha', 'img')
+CAPTCHA_DIR = '/data/coding/captcha/img'
 # 模型保存目录
 MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models')
 

@@ -110,9 +110,9 @@ from extras.focal_loss import FocalLoss
 3. **更新导入**
    - ✅ 更新 `train_v4.py` 导入路径
    - ✅ 更新 `train.py` 导入路径
-   - ✅ 更新 `trainer.py` 导入路径
+   - ✅ 更新 `trainer.py` 导入路径（包括内部的 `model_enhanced` 导入）
    - ✅ 更新 `core/` 内部文件相对导入
-   - ✅ 更新 `extras/` 文件导入
+   - ✅ 更新 `extras/` 文件导入（使用绝对导入避免相对导入错误）
 
 4. **创建 __init__.py**
    - ✅ `core/__init__.py` - 导出常用类和函数
@@ -246,6 +246,33 @@ from ..core import config      # extras/ 访问 core/
 - [README.md](README.md) - 快速使用指南
 - [docs/MODULAR_DESIGN.md](docs/MODULAR_DESIGN.md) - 详细设计文档
 - [docs/REFACTORING_SUMMARY.md](docs/REFACTORING_SUMMARY.md) - 完整重构总结
+
+## 🐛 已修复问题
+
+### 问题1: 相对导入错误 (2026-01-31)
+
+**错误**: `ImportError: attempted relative import beyond top-level package`
+
+**原因**: `extras/` 目录文件使用相对导入 `from ..core import config`
+
+**修复**: 改为绝对导入 `from core import config`
+
+**影响文件**:
+- `extras/model_enhanced.py`
+- `extras/predict.py`
+
+### 问题2: trainer.py 中 model_enhanced 导入错误 (2026-01-31)
+
+**错误**: `ModuleNotFoundError: No module named 'model_enhanced'`
+
+**原因**: `trainer.py` 第80行使用了 `from model_enhanced import compile_model`，未更新为新的路径
+
+**修复**: 改为 `from extras.model_enhanced import compile_model`
+
+**影响文件**:
+- `trainer.py`
+
+**验证**: 运行 `python test_trainer_fix.py` 通过
 
 ---
 

@@ -30,7 +30,7 @@ def test_imports():
         ("trainer", "from trainer import CaptchaTrainer"),
         
         # Extras 模块
-        ("extras.model_enhanced", "from extras.model_enhanced import create_enhanced_cnn_model"),
+        ("extras.model_enhanced", "from extras.model_enhanced import create_enhanced_cnn_model, compile_model"),
         ("extras.focal_loss", "from extras.focal_loss import BinaryFocalLoss"),
         ("extras.predict", "from extras.predict import CaptchaPredictor"),
     ]

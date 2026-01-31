@@ -106,13 +106,16 @@ def main():
     print("步骤 4/5: 训练模型")
     print("-" * 80)
     
-    # 创建回调（模块化）
+    # 创建回调（模块化）- 优化磁盘空间使用
     callbacks = create_callbacks(
         model_dir=config.MODEL_DIR,
         log_dir=config.LOG_DIR,
         val_data=(val_images, val_labels),
         use_step_based=True,  # 使用step-based策略（参考trains.py）
-        use_early_stopping=False  # 不使用早停（已有多条件终止）
+        use_early_stopping=False,  # 不使用早停（已有多条件终止）
+        checkpoint_save_step=500,  # 每500步保存checkpoint（降低磁盘占用）
+        validation_steps=500,  # 每500步验证
+        max_checkpoints_keep=3  # 只保留最近3个checkpoint（节省磁盘空间）
     )
     
     # 创建训练器（模块化）

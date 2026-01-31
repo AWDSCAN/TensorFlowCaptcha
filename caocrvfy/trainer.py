@@ -77,7 +77,7 @@ class CaptchaTrainer:
             use_enhanced_model: 是否使用增强模型
         """
         if use_enhanced_model:
-            from model_enhanced import compile_model
+            from extras.model_enhanced import compile_model
             self.model = compile_model(
                 self.model,
                 use_focal_loss=False,
