@@ -49,11 +49,11 @@ MAX_CAPTCHA = 8  # 支持1-8位不定长验证码
 CONV_FILTERS = [32, 64, 64]  # 每层的过滤器数量
 CONV_KERNEL_SIZE = (3, 3)  # 卷积核大小
 POOL_SIZE = (2, 2)  # 池化层大小
-DROPOUT_CONV = 0.2  # 卷积层Dropout（降低以保留更多特征）
+DROPOUT_CONV = 0.25  # 卷积层Dropout（增强正则化，减少过拟合）
 
 # 全连接层配置
 FC_UNITS = 1024  # 全连接层神经元数量
-DROPOUT_FC = 0.4  # 全连接层Dropout（从0.5降到0.4，减少信息损失）
+DROPOUT_FC = 0.5  # 全连接层Dropout（提高至0.5，参考trains.py）
 
 # 输出层配置
 OUTPUT_SIZE = MAX_CAPTCHA * CHAR_SET_LEN  # 8 × 63 = 504
@@ -66,9 +66,11 @@ BATCH_SIZE = 128  # 充分利用GPU内存
 EPOCHS = 300  # 足够的训练轮数
 
 # 学习率配置
-LEARNING_RATE = 0.0012  # 初始学习率（经过多次实验验证）
+LEARNING_RATE = 0.001  # 初始学习率（从0.0012降至0.001，更稳定）
 WARMUP_EPOCHS = 10  # Warmup轮数
 WARMUP_LR_START = 0.0001  # Warmup起始学习率
+LR_DECAY_FACTOR = 0.5  # 学习率衰减因子
+LR_DECAY_PATIENCE = 8  # 学习率衰减耐心值（从10降至8，参考trains.py更激进的调整）
 
 # 验证集比例
 VALIDATION_SPLIT = 0.2

@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-模型训练模块
+模型训练模块（v3.0 - 数据增强优化）
 功能：训练验证码识别模型
+参考trains.py策略：数据增强 + 更强正则化 + 快速学习率调整
 """
 
 import os
@@ -12,6 +13,7 @@ import tensorflow as tf
 from tensorflow import keras
 import config
 from data_loader import CaptchaDataLoader
+from data_augmentation import create_augmented_dataset  # 新增数据增强
 import utils
 
 # 选择使用增强版模型还是基础模型
@@ -20,7 +22,7 @@ USE_ENHANCED_MODEL = True  # 改为True使用增强版模型
 if USE_ENHANCED_MODEL:
     from model_enhanced import create_enhanced_cnn_model as create_model
     from model_enhanced import compile_model, print_model_summary
-    print("使用增强版CNN模型（5层卷积 + BatchNorm + 更大FC层）")
+    print("使用增强版CNN模型（5层卷积 + BatchNorm + 更大FC层 + 数据增强）")
 else:
     from model import create_cnn_model as create_model
     from model import compile_model, print_model_summary
@@ -103,15 +105,15 @@ def create_callbacks(model_dir=None, log_dir=None, val_data=None):
     )
     callbacks.append(tensorboard)
     
-    # 学习率衰减（v2.3优化：更长的patience）
+    # 学习率衰减（优化：更快响应，参考trains.py的策略）
     reduce_lr = keras.callbacks.ReduceLROnPlateau(
         monitor='val_loss',
         mode='min',
         factor=0.5,
-        patience=10,  # 10轮无改进即衰减（增加patience）
+        patience=8,  # 8轮无改进即衰减（从10降低，更快响应）
         min_lr=5e-7,  # 最小学习率降低到5e-7
         verbose=1,
-        cooldown=3,  # 冷却3轮
+        cooldown=2,  # 冷却2轮（降低冷却时间）
         min_delta=0.00005  # 降低阈值，更敏感
     )
     callbacks.append(reduce_lr)
@@ -269,25 +271,39 @@ def train_model(
     print(f"初始学习率: {config.LEARNING_RATE}")
     print(f"优化器: Adam with AMSGrad")
     print("=" * 80)
-    print("训练策略（2026-01-30 v2.3 - 突破73%瓶颈）:")
-    print("  - Warmup阶段: 前10轮学习率从0.0001→0.0012逐步提升")
+    print("训练策略（v3.0 - 参考trains.py优化）:")
+    print("  - 数据增强: 亮度/对比度变化 + 随机噪声（减少过拟合）")
+    print("  - Warmup阶段: 前10轮学习率从0.0001→0.001逐步提升")
     print("  - 主训练阶段: 前50轮充分训练，不触发早停")
     print("  - 早停监控: 第50轮后启用，35轮无改进自动停止")
-    print("  - 学习率衰减: 10轮无改进降低50%（更长的patience）")
+    print("  - 学习率衰减: 8轮无改进降低50%（更快响应，参考trains.py）")
     print("  - 批次大小: 128")
-    print("  - 正则化: BatchNorm + Dropout 0.2/0.4（降低Dropout提高召回率）")
-    print("  - 损失函数: BinaryCrossentropy")
+    print("  - 正则化: BatchNorm + Dropout 0.25/0.5（更强正则化）")
+    print("  - 损失函数: WeightedBCE（pos_weight=3.0，解决类别不平衡）")
     print("  - 每轮计算: 完整匹配准确率（采样1000个验证样本）")
     print("=" * 80)
     print()
     
+    # 使用数据增强创建训练集（参考trains.py的数据预处理策略）
+    print("创建增强数据集...")
+    train_dataset = create_augmented_dataset(
+        train_images, train_labels, 
+        batch_size=batch_size, 
+        training=True
+    )
+    val_dataset = create_augmented_dataset(
+        val_images, val_labels, 
+        batch_size=batch_size, 
+        training=False  # 验证集不增强
+    )
+    print("✓ 数据增强pipeline已启用")
+    print()
+    
     # 训练模型
     history = model.fit(
-        train_images,
-        train_labels,
-        batch_size=batch_size,
+        train_dataset,  # 使用增强后的Dataset
         epochs=epochs,
-        validation_data=(val_images, val_labels),
+        validation_data=val_dataset,  # 使用Dataset
         callbacks=callbacks,
         verbose=2
     )

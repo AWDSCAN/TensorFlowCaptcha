@@ -90,18 +90,18 @@ def create_enhanced_cnn_model():
     x = layers.Conv2D(128, (3, 3), padding='same', activation='relu', name='conv3')(x)
     x = layers.BatchNormalization(name='bn3')(x)
     x = layers.MaxPooling2D((2, 2), name='pool3')(x)
-    x = layers.Dropout(0.2, name='dropout1')(x)
+    x = layers.Dropout(0.25, name='dropout1')(x)
     
     # 第四层卷积块
     x = layers.Conv2D(128, (3, 3), padding='same', activation='relu', name='conv4')(x)
     x = layers.BatchNormalization(name='bn4')(x)
-    x = layers.Dropout(0.2, name='dropout2')(x)
+    x = layers.Dropout(0.25, name='dropout2')(x)
     
     # 第五层卷积块
     x = layers.Conv2D(256, (3, 3), padding='same', activation='relu', name='conv5')(x)
     x = layers.BatchNormalization(name='bn5')(x)
     x = layers.MaxPooling2D((2, 2), name='pool5')(x)
-    x = layers.Dropout(0.2, name='dropout3')(x)
+    x = layers.Dropout(0.25, name='dropout3')(x)
     
     # 展平
     x = layers.Flatten(name='flatten')(x)
@@ -109,12 +109,12 @@ def create_enhanced_cnn_model():
     # 第一个全连接层
     x = layers.Dense(2048, activation='relu', name='fc1')(x)
     x = layers.BatchNormalization(name='bn_fc1')(x)
-    x = layers.Dropout(0.4, name='dropout_fc1')(x)
+    x = layers.Dropout(0.5, name='dropout_fc1')(x)
     
     # 第二个全连接层
     x = layers.Dense(1024, activation='relu', name='fc2')(x)
     x = layers.BatchNormalization(name='bn_fc2')(x)
-    x = layers.Dropout(0.4, name='dropout_fc2')(x)
+    x = layers.Dropout(0.5, name='dropout_fc2')(x)
     
     # 输出层
     outputs = layers.Dense(config.OUTPUT_SIZE, activation='sigmoid', name='output')(x)
