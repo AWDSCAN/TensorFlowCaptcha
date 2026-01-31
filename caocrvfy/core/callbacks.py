@@ -288,7 +288,7 @@ class StepBasedCallbacks(keras.callbacks.Callback):
 def create_callbacks(model_dir, log_dir, val_data, 
                      use_step_based=True, use_early_stopping=False,
                      checkpoint_save_step=500, validation_steps=500,
-                     max_checkpoints_keep=5):
+                     max_checkpoints_keep=5, end_acc=0.85, max_steps=150000):
     """
     创建训练回调函数（模块化设计）
     
@@ -304,6 +304,8 @@ def create_callbacks(model_dir, log_dir, val_data,
         checkpoint_save_step: checkpoint保存间隔（步）- 默认500步（避免磁盘占满）
         validation_steps: 验证间隔（步）- 默认500步
         max_checkpoints_keep: 最多保留的checkpoint数量（默认5个）
+        end_acc: 目标准确率（默认0.85即85%）
+        max_steps: 最大训练步数（默认150000）
     
     返回:
         回调函数列表
@@ -345,13 +347,14 @@ def create_callbacks(model_dir, log_dir, val_data,
             model_dir=model_dir,
             save_step=checkpoint_save_step,  # 使用配置的保存间隔
             validation_steps=validation_steps,
-            end_acc=0.80,
+            end_acc=end_acc,  # 使用传入的目标准确率
             end_loss=0.05,
-            max_steps=50000,
+            max_steps=max_steps,  # 使用传入的最大步数
             max_checkpoints=max_checkpoints_keep  # 只保留N个checkpoint
         )
         callbacks.append(step_based)
         print(f"✓ 启用Step-based训练策略（每{validation_steps}步验证，每{checkpoint_save_step}步保存，保留{max_checkpoints_keep}个checkpoint）")
+        print(f"  目标准确率: {end_acc:.1%} | 最大步数: {max_steps}")
     
     # 4. 早停（可选，不建议与step-based同时使用）
     if use_early_stopping and not use_step_based:

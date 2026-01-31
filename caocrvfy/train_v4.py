@@ -97,8 +97,12 @@ def main():
     print("步骤 3/5: 创建模型")
     print("-" * 80)
     model = create_model()
-    # 使用加权BCE Loss（pos_weight=3.0，解决类别不平衡）
-    model = compile_model(model, use_focal_loss=False, pos_weight=3.0)
+    
+    # 优化策略组合：
+    # 1. 使用Focal Loss处理困难样本（gamma=2.0，更关注错误样本）
+    # 2. 增加pos_weight到3.5（进一步强调实际字符识别）
+    print("🔧 优化配置：Focal Loss (gamma=2.0) + pos_weight=3.5")
+    model = compile_model(model, use_focal_loss=True, pos_weight=3.5, focal_gamma=2.0)
     print_model_summary(model)
     print()
     
@@ -106,16 +110,18 @@ def main():
     print("步骤 4/5: 训练模型")
     print("-" * 80)
     
-    # 创建回调（模块化）- 优化磁盘空间使用
+    # 创建回调（模块化）- 优化训练策略
     callbacks = create_callbacks(
         model_dir=config.MODEL_DIR,
         log_dir=config.LOG_DIR,
         val_data=(val_images, val_labels),
         use_step_based=True,  # 使用step-based策略（参考trains.py）
         use_early_stopping=False,  # 不使用早停（已有多条件终止）
-        checkpoint_save_step=500,  # 每500步保存checkpoint（降低磁盘占用）
+        checkpoint_save_step=500,  # 每500步保存checkpoint
         validation_steps=500,  # 每500步验证
-        max_checkpoints_keep=3  # 只保留最近3个checkpoint（节省磁盘空间）
+        max_checkpoints_keep=3,  # 只保留最近3个checkpoint（节省磁盘空间）
+        end_acc=0.85,  # 目标准确率提升至85%
+        max_steps=150000  # 增加训练步数上限到150000
     )
     
     # 创建训练器（模块化）

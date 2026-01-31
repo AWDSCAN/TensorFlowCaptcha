@@ -52,7 +52,7 @@ POOL_SIZE = (2, 2)  # 池化层大小
 DROPOUT_CONV = 0.25  # 卷积层Dropout（增强正则化，减少过拟合）
 
 # 全连接层配置
-FC_UNITS = 1024  # 全连接层神经元数量
+FC_UNITS = 2048  # 全连接层神经元数量（增加至2048，提升表达能力）
 DROPOUT_FC = 0.5  # 全连接层Dropout（提高至0.5，参考trains.py）
 
 # 输出层配置
@@ -66,11 +66,11 @@ BATCH_SIZE = 128  # 充分利用GPU内存
 EPOCHS = 300  # 足够的训练轮数
 
 # 学习率配置
-LEARNING_RATE = 0.001  # 初始学习率（从0.0012降至0.001，更稳定）
-WARMUP_EPOCHS = 10  # Warmup轮数
-WARMUP_LR_START = 0.0001  # Warmup起始学习率
-LR_DECAY_FACTOR = 0.5  # 学习率衰减因子
-LR_DECAY_PATIENCE = 8  # 学习率衰减耐心值（从10降至8，参考trains.py更激进的调整）
+LEARNING_RATE = 0.0008  # 初始学习率（降至0.0008，更精细的优化）
+WARMUP_EPOCHS = 15  # Warmup轮数（增加至15，更平滑的启动）
+WARMUP_LR_START = 0.00005  # Warmup起始学习率（更小的起点）
+LR_DECAY_FACTOR = 0.6  # 学习率衰减因子（0.6更平滑）
+LR_DECAY_PATIENCE = 12  # 学习率衰减耐心值（增加至12，更稳定）
 
 # 验证集比例
 VALIDATION_SPLIT = 0.2
@@ -81,7 +81,7 @@ EARLY_STOPPING_START_EPOCH = 50  # 从第50轮开始监控
 
 # ==================== 数据增强参数 ====================
 # 是否使用数据增强
-USE_DATA_AUGMENTATION = False  # 验证码已有干扰，可选择不增强
+USE_DATA_AUGMENTATION = True  # 启用数据增强，提升模型泛化能力和准确率
 
 # ==================== 其他配置 ====================
 # 是否使用 GPU

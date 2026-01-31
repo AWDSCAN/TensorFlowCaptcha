@@ -223,9 +223,9 @@ def compile_model(model, learning_rate=None, use_focal_loss=False, focal_gamma=1
     
     # 损失函数：加权BCE Loss（解决类别不平衡：正类权重=3.0）
     if use_focal_loss:
-        from focal_loss import BinaryFocalLoss
+        from .focal_loss import BinaryFocalLoss
         loss = BinaryFocalLoss(gamma=focal_gamma, alpha=0.75)
-        print(f"⚠️  使用Focal Loss (gamma={focal_gamma}, alpha=0.75) - 注意：可能降低准确率")
+        print(f"✓ 使用Focal Loss (gamma={focal_gamma}, alpha=0.75) - 专注困难样本")
     else:
         loss = WeightedBinaryCrossentropy(pos_weight=pos_weight)
         print(f"✓ 使用加权BCE Loss（正类权重={pos_weight}，解决类别不平衡）")
