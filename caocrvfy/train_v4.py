@@ -111,6 +111,7 @@ def main():
     print("-" * 80)
     
     # 创建回调（模块化）- 优化训练策略
+    # 观察：79.5%后波动，需要更多步数和更频繁验证
     callbacks = create_callbacks(
         model_dir=config.MODEL_DIR,
         log_dir=config.LOG_DIR,
@@ -118,10 +119,10 @@ def main():
         use_step_based=True,  # 使用step-based策略（参考trains.py）
         use_early_stopping=False,  # 不使用早停（已有多条件终止）
         checkpoint_save_step=500,  # 每500步保存checkpoint
-        validation_steps=500,  # 每500步验证
+        validation_steps=300,  # 每300步验证（更频繁观察，原500）
         max_checkpoints_keep=3,  # 只保留最近3个checkpoint（节省磁盘空间）
-        end_acc=0.85,  # 目标准确率提升至85%
-        max_steps=150000  # 增加训练步数上限到150000
+        end_acc=0.82,  # 目标准确率82%（观察到79.5%峰值，设定更现实目标）
+        max_steps=200000  # 增加到200000步（再给50000步突破机会）
     )
     
     # 创建训练器（模块化）
