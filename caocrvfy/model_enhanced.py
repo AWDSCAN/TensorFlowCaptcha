@@ -15,6 +15,48 @@ from tensorflow.keras import layers, models
 import config
 
 
+class WeightedBinaryCrossentropy(keras.losses.Loss):
+    """
+    加权二元交叉熄损失
+    解决类别不平衡问题：给正类（实际字符）更高权重
+    
+    问题：
+        - 输出维度：8字符 × 63类 = 504维
+        - 实际字符：平均64-6个
+        - Padding位：2-4个
+        - 负样本比例：>50%
+        
+    解决：
+        - 正类权重：3.0（实际字符）
+        - 负类权重：1.0（padding/空格）
+    """
+    
+    def __init__(self, pos_weight=3.0, name='weighted_bce'):
+        super().__init__(name=name)
+        self.pos_weight = pos_weight
+    
+    def call(self, y_true, y_pred):
+        # 确保y_pred在有效范围内
+        epsilon = keras.backend.epsilon()
+        y_pred = tf.clip_by_value(y_pred, epsilon, 1.0 - epsilon)
+        
+        # 计算加权交叉熄
+        # 正类（y_true=1）损失乘以pos_weight
+        pos_loss = -y_true * tf.math.log(y_pred) * self.pos_weight
+        # 负类（y_true=0）损失保持不变
+        neg_loss = -(1 - y_true) * tf.math.log(1 - y_pred)
+        
+        # 总损失
+        loss = pos_loss + neg_loss
+        
+        return tf.reduce_mean(loss)
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({'pos_weight': self.pos_weight})
+        return config
+
+
 def create_enhanced_cnn_model():
     """
     创建增强版验证码识别CNN模型（用于强干扰）
@@ -154,7 +196,7 @@ def create_resnet_style_model():
     return model
 
 
-def compile_model(model, learning_rate=None, use_focal_loss=False, focal_gamma=1.5):
+def compile_model(model, learning_rate=None, use_focal_loss=False, focal_gamma=1.5, pos_weight=3.0):
     """
     编译模型
     
@@ -163,6 +205,7 @@ def compile_model(model, learning_rate=None, use_focal_loss=False, focal_gamma=1
         learning_rate: 学习率
         use_focal_loss: 是否使用Focal Loss（默认False，标准BCE效果更好：75% vs 52%）
         focal_gamma: Focal Loss的gamma参数（1.0-2.0，默认1.5）
+        pos_weight: 正类权重（默认3.0，解决类别不平衡）
     
     返回:
         编译后的模型
@@ -178,20 +221,20 @@ def compile_model(model, learning_rate=None, use_focal_loss=False, focal_gamma=1
         clipnorm=1.0     # 梯度裁剪，防止梯度爆炸
     )
     
-    # 损失函数：标准BCE Loss（经GPU服务器实测：BCE=75% > Focal Loss=52%）
+    # 损失函数：加权BCE Loss（解决类别不平衡：正类权重=3.0）
     if use_focal_loss:
         from focal_loss import BinaryFocalLoss
         loss = BinaryFocalLoss(gamma=focal_gamma, alpha=0.75)
         print(f"⚠️  使用Focal Loss (gamma={focal_gamma}, alpha=0.75) - 注意：可能降低准确率")
     else:
-        loss = keras.losses.BinaryCrossentropy()
-        print("✓ 使用标准BCE Loss（已验证最优：75% > Focal Loss 52%）")
+        loss = WeightedBinaryCrossentropy(pos_weight=pos_weight)
+        print(f"✓ 使用加权BCE Loss（正类权重={pos_weight}，解决类别不平衡）")
     
-    # 评估指标
+    # 评估指标：添加更适合的阈值配置
     metrics = [
-        keras.metrics.BinaryAccuracy(name='binary_accuracy'),
-        keras.metrics.Precision(name='precision'),
-        keras.metrics.Recall(name='recall')
+        keras.metrics.BinaryAccuracy(name='binary_accuracy', threshold=0.5),
+        keras.metrics.Precision(name='precision', thresholds=0.5),
+        keras.metrics.Recall(name='recall', thresholds=0.5)
     ]
     
     model.compile(

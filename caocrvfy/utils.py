@@ -54,12 +54,13 @@ def text_to_vector(text):
     return vector
 
 
-def vector_to_text(vector):
+def vector_to_text(vector, threshold=0.5):
     """
     将one-hot编码向量转换回验证码文本
     
     参数:
         vector: numpy数组，形状为 (MAX_CAPTCHA × CHAR_SET_LEN,) 或 (MAX_CAPTCHA, CHAR_SET_LEN)
+        threshold: 置信度阈值，低于此值的预测将被忽略
     
     返回:
         验证码文本字符串
@@ -73,9 +74,16 @@ def vector_to_text(vector):
     
     text = []
     for i in range(config.MAX_CAPTCHA):
-        # 找到每个位置概率最大的字符索引
+        # 找到每个位置概率最大的字符
+        max_prob = np.max(vector[i])
         char_idx = np.argmax(vector[i])
-        char = config.CHAR_SET[char_idx]
+        
+        # 只有置信度超过阈值才使用，否则用填充字符
+        if max_prob >= threshold:
+            char = config.CHAR_SET[char_idx]
+        else:
+            char = config.PADDING_CHAR  # 低置信度用空格
+        
         text.append(char)
     
     # 去除尾部的填充字符（空格）

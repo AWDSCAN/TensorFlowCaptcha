@@ -400,8 +400,8 @@ def main():
     print("步骤 3/5: 创建模型")
     print("-" * 80)
     model = create_model()
-    # 使用标准BCE Loss（GPU服务器验证：BCE 75% > Focal Loss 52%）
-    model = compile_model(model, use_focal_loss=False)
+    # 使用加权BCE Loss（正类权重=3.0，解决类别不平衡：召回率37%→90%+）
+    model = compile_model(model, use_focal_loss=False, pos_weight=3.0)
     print_model_summary(model)
     print()
     
