@@ -93,6 +93,8 @@ from extras.model_enhanced import create_enhanced_cnn_model
 from extras.focal_loss import FocalLoss
 ```
 
+**重要**: `extras/` 目录下的文件使用**绝对导入**而非相对导入，确保在直接运行脚本时不会出现 `ImportError: attempted relative import beyond top-level package` 错误。
+
 ## ✅ 已完成的工作
 
 1. **创建目录结构**
@@ -212,6 +214,32 @@ python train.py
    - 修改配置 → `core/config.py`
    - 添加回调 → `core/callbacks.py`
    - 自定义评估 → `core/evaluator.py`
+
+## ⚠️ 重要说明：导入策略
+
+### 为什么使用绝对导入？
+
+所有模块（`core/` 和 `extras/`）都使用**绝对导入**（如 `from core import config`）而不是相对导入（如 `from . import config` 或 `from ..core import config`）。
+
+**原因**:
+- ✅ 直接运行脚本时不会出错（`python train_v4.py`）
+- ✅ 在任何环境下都能正确导入
+- ✅ 避免 `ImportError: attempted relative import beyond top-level package` 错误
+
+**导入规则**:
+
+```python
+# ✅ 正确 - 所有模块都这样导入
+from core import config
+from core.callbacks import create_callbacks
+from extras.model_enhanced import create_enhanced_cnn_model
+
+# ❌ 错误 - 会在直接运行脚本时失败
+from . import config           # core/ 内部
+from ..core import config      # extras/ 访问 core/
+```
+
+**工作目录**: 运行脚本时必须在 `caocrvfy/` 目录下（包含 `core/` 和 `extras/` 的父目录）
 
 ## 📖 参考文档
 

@@ -46,11 +46,22 @@ cd caocrvfy
 python train_v4.py
 ```
 
+**重要**: 必须在 `caocrvfy/` 目录下运行（包含 `core/` 和 `extras/` 的父目录）
+
 **特点**：
 - ✅ 清晰的模块化结构
 - ✅ Step-based验证策略
 - ✅ 指数衰减学习率
 - ✅ 完整的回调管理
+
+### 测试导入是否正常
+
+```bash
+cd caocrvfy
+python test_imports.py
+```
+
+如果所有测试通过，即可正常运行训练。
 
 ### 使用原版训练（向后兼容）
 
