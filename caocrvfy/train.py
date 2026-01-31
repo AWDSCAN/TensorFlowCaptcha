@@ -11,17 +11,17 @@ import sys
 import time
 import tensorflow as tf
 from tensorflow import keras
-import config
-from data_loader import CaptchaDataLoader
-from data_augmentation import create_augmented_dataset  # 新增数据增强
-import utils
+from core import config
+from core.data_loader import CaptchaDataLoader
+from core.data_augmentation import create_augmented_dataset  # 新增数据增强
+from core import utils
 
 # 选择使用增强版模型还是基础模型
 USE_ENHANCED_MODEL = True  # 改为True使用增强版模型
 
 if USE_ENHANCED_MODEL:
-    from model_enhanced import create_enhanced_cnn_model as create_model
-    from model_enhanced import compile_model, print_model_summary
+    from extras.model_enhanced import create_enhanced_cnn_model as create_model
+    from extras.model_enhanced import compile_model, print_model_summary
     print("使用增强版CNN模型（5层卷积 + BatchNorm + 更大FC层 + 数据增强）")
 else:
     from model import create_cnn_model as create_model
@@ -105,42 +105,107 @@ def create_callbacks(model_dir=None, log_dir=None, val_data=None):
     )
     callbacks.append(tensorboard)
     
-    # 学习率衰减（优化：更快响应，参考trains.py的策略）
-    reduce_lr = keras.callbacks.ReduceLROnPlateau(
-        monitor='val_loss',
-        mode='min',
-        factor=0.5,
-        patience=8,  # 8轮无改进即衰减（从10降低，更快响应）
-        min_lr=5e-7,  # 最小学习率降低到5e-7
-        verbose=1,
-        cooldown=2,  # 冷却2轮（降低冷却时间）
-        min_delta=0.00005  # 降低阈值，更敏感
-    )
-    callbacks.append(reduce_lr)
+    # 指数衰减学习率（参考trains.py：每10000步×0.98）
+    # TF2使用ExponentialDecay Schedule，不在callbacks中设置
+    # 注意：这里不添加reduce_lr回调，改用自定义学习率调度
     
-    # Warmup学习率策略（前15轮渐进提升）
-    class WarmupLearningRate(keras.callbacks.Callback):
-        def __init__(self, warmup_epochs=15, target_lr=0.001, start_lr=0.0001):
+    # Step-based验证和保存（参考trains.py：每500步验证，每100步保存）
+    class StepBasedCallbacks(keras.callbacks.Callback):
+        """
+        Step-based训练策略（参考captcha_trainer/trains.py）：
+        - 每save_step步保存checkpoint
+        - 每validation_steps步验证
+        - 多条件终止：accuracy AND loss AND steps
+        """
+        def __init__(self, val_data, model_dir, save_step=100, validation_steps=500,
+                     end_acc=0.95, end_loss=0.01, max_steps=50000):
             super().__init__()
-            self.warmup_epochs = warmup_epochs
-            self.target_lr = target_lr
-            self.start_lr = start_lr
+            self.val_images, self.val_labels = val_data
+            self.model_dir = model_dir
+            self.save_step = save_step
+            self.validation_steps = validation_steps
+            self.end_acc = end_acc  # 目标准确率
+            self.end_loss = end_loss  # 目标损失
+            self.max_steps = max_steps  # 最大步数
+            self.current_step = 0
+            self.best_val_acc = 0
+            self.best_val_loss = float('inf')
         
-        def on_epoch_begin(self, epoch, logs=None):
-            if epoch < self.warmup_epochs:
-                # 线性增长：从start_lr逐渐增加到target_lr
-                lr = self.start_lr + (self.target_lr - self.start_lr) * ((epoch + 1) / self.warmup_epochs)
-                # 兼容不同Keras版本的学习率设置方式
+        def on_batch_end(self, batch, logs=None):
+            self.current_step += 1
+            logs = logs or {}
+            
+            # 每save_step步保存checkpoint
+            if self.current_step % self.save_step == 0:
+                checkpoint_path = os.path.join(self.model_dir, f'checkpoint_step_{self.current_step}.keras')
+                self.model.save(checkpoint_path)
+                print(f"\n  💾 Step {self.current_step}: 保存checkpoint (loss={logs.get('loss', 0):.4f})")
+            
+            # 每validation_steps步验证
+            if self.current_step % self.validation_steps == 0:
+                import numpy as np
+                # 采样1000个验证样本
+                sample_size = min(1000, len(self.val_images))
+                indices = np.random.choice(len(self.val_images), sample_size, replace=False)
+                sample_images = self.val_images[indices]
+                sample_labels = self.val_labels[indices]
+                
+                # 计算验证损失和准确率
+                val_results = self.model.evaluate(sample_images, sample_labels, verbose=0)
+                val_loss = val_results[0]
+                val_binary_acc = val_results[1]
+                
+                # 计算完整匹配准确率
+                predictions = self.model.predict(sample_images, verbose=0)
+                pred_texts = [utils.vector_to_text(pred) for pred in predictions]
+                true_texts = [utils.vector_to_text(label) for label in sample_labels]
+                full_match_acc = utils.calculate_accuracy(true_texts, pred_texts)
+                
+                # 获取当前学习率
                 try:
-                    # 尝试使用assign方法（TensorFlow 2.x推荐）
-                    self.model.optimizer.learning_rate.assign(lr)
-                except AttributeError:
-                    # 降级到backend.set_value（旧版本）
-                    import tensorflow.keras.backend as K
-                    K.set_value(self.model.optimizer.lr, lr)
-                print(f"  [Warmup] Epoch {epoch+1}/{self.warmup_epochs}, LR: {lr:.6f}")
+                    current_lr = float(self.model.optimizer.learning_rate(self.current_step))
+                except:
+                    try:
+                        current_lr = float(self.model.optimizer.learning_rate.numpy())
+                    except:
+                        current_lr = 0.001
+                
+                print(f"\n  📊 Step {self.current_step} 验证结果:")
+                print(f"      验证损失: {val_loss:.4f} | 二进制准确率: {val_binary_acc:.4f}")
+                print(f"      完整匹配: {full_match_acc*100:.2f}% | 学习率: {current_lr:.6f}")
+                
+                # 更新最佳指标
+                if full_match_acc > self.best_val_acc:
+                    self.best_val_acc = full_match_acc
+                    print(f"      ⬆ 最佳完整匹配准确率: {self.best_val_acc*100:.2f}%")
+                if val_loss < self.best_val_loss:
+                    self.best_val_loss = val_loss
+                    print(f"      ⬇ 最佳验证损失: {self.best_val_loss:.4f}")
+                
+                # 多条件终止检查（参考trains.py的achieve_cond）
+                achieve_accuracy = full_match_acc >= self.end_acc
+                achieve_loss = val_loss <= self.end_loss
+                achieve_steps = self.current_step >= 10000  # 至少训练10000步
+                over_max_steps = self.current_step > self.max_steps
+                
+                if (achieve_accuracy and achieve_loss and achieve_steps) or over_max_steps:
+                    print(f"\n  🎯 满足终止条件:")
+                    print(f"      准确率达标: {achieve_accuracy} (>={self.end_acc:.2%})")
+                    print(f"      损失达标: {achieve_loss} (<={self.end_loss:.4f})")
+                    print(f"      步数达标: {achieve_steps} (>={10000})")
+                    print(f"      或超过最大步数: {over_max_steps} (>{self.max_steps})")
+                    print(f"\n  ✅ 提前终止训练！")
+                    self.model.stop_training = True
     
-    callbacks.append(WarmupLearningRate(warmup_epochs=10, target_lr=config.LEARNING_RATE, start_lr=0.0001))
+    callbacks.append(StepBasedCallbacks(
+        val_data=val_data,
+        model_dir=model_dir,
+        save_step=100,  # 每100步保存
+        validation_steps=500,  # 每500步验证
+        end_acc=0.80,  # 目标80%完整匹配准确率
+        end_loss=0.05,  # 目标损失0.05
+        max_steps=50000  # 最多50000步
+    ))
     
     # 保存最佳完整匹配准确率模型
     class BestFullMatchCheckpoint(keras.callbacks.Callback):
@@ -239,7 +304,8 @@ def train_model(
     val_data,
     epochs=None,
     batch_size=None,
-    callbacks=None
+    callbacks=None,
+    use_exponential_decay=True  # 新增：使用指数衰减学习率
 ):
     """
     训练模型
@@ -251,12 +317,46 @@ def train_model(
         epochs: 训练轮数
         batch_size: 批次大小
         callbacks: 回调函数列表
+        use_exponential_decay: 是否使用指数衰减学习率（参考trains.py）
     
     返回:
         训练历史
     """
     epochs = epochs or config.EPOCHS
     batch_size = batch_size or config.BATCH_SIZE
+    
+    # 如果启用指数衰减，重新编译模型（参考trains.py策略）
+    if use_exponential_decay:
+        print("\n🔄 使用指数衰减学习率（参考captcha_trainer/trains.py）")
+        # 计算每个epoch的步数
+        train_images, train_labels = train_data
+        steps_per_epoch = len(train_images) // batch_size
+        
+        # 指数衰减：每10000步×0.98（参考trains.py）
+        lr_schedule = keras.optimizers.schedules.ExponentialDecay(
+            initial_learning_rate=config.LEARNING_RATE,
+            decay_steps=10000,  # 每10000步衰减
+            decay_rate=0.98,    # 衰减2%
+            staircase=True      # 阶梯式衰减
+        )
+        
+        # 重新编译模型使用新的学习率调度
+        if USE_ENHANCED_MODEL:
+            from model_enhanced import compile_model
+            model = compile_model(
+                model, 
+                use_focal_loss=False, 
+                pos_weight=3.0,
+                learning_rate=lr_schedule  # 传入学习率调度
+            )
+        else:
+            from model import compile_model
+            model = compile_model(model, learning_rate=lr_schedule)
+        
+        print(f"  初始学习率: {config.LEARNING_RATE}")
+        print(f"  衰减策略: 每10000步 × 0.98")
+        print(f"  每轮步数: {steps_per_epoch}")
+        print()
     
     train_images, train_labels = train_data
     val_images, val_labels = val_data
@@ -271,16 +371,22 @@ def train_model(
     print(f"初始学习率: {config.LEARNING_RATE}")
     print(f"优化器: Adam with AMSGrad")
     print("=" * 80)
-    print("训练策略（v3.0 - 参考trains.py优化）:")
-    print("  - 数据增强: 亮度/对比度变化 + 随机噪声（减少过拟合）")
-    print("  - Warmup阶段: 前10轮学习率从0.0001→0.001逐步提升")
-    print("  - 主训练阶段: 前50轮充分训练，不触发早停")
-    print("  - 早停监控: 第50轮后启用，35轮无改进自动停止")
-    print("  - 学习率衰减: 8轮无改进降低50%（更快响应，参考trains.py）")
-    print("  - 批次大小: 128")
-    print("  - 正则化: BatchNorm + Dropout 0.25/0.5（更强正则化）")
-    print("  - 损失函数: WeightedBCE（pos_weight=3.0，解决类别不平衡）")
-    print("  - 每轮计算: 完整匹配准确率（采样1000个验证样本）")
+    print("训练策略（v4.0 - 完整参考captcha_trainer/trains.py）:")
+    print("  🔧 核心策略（来自test/captcha_trainer）:")
+    print("     - Step-based验证: 每500步验证一次（而非每epoch）")
+    print("     - 指数衰减学习率: 每10000步 × 0.98（阶梯式衰减）")
+    print("     - 多条件终止: 准确率>=80% AND 损失<=0.05 AND 步数>=10000")
+    print("     - Step-based保存: 每100步保存checkpoint")
+    print("  📊 数据处理:")
+    print("     - 数据增强: 亮度/对比度变化 + 随机噪声")
+    print("     - 批次大小: 128")
+    print("  🎯 模型配置:")
+    print("     - 正则化: BatchNorm + Dropout 0.25/0.5")
+    print("     - 损失函数: WeightedBCE (pos_weight=3.0)")
+    print("     - 优化器: Adam with AMSGrad")
+    print("  ⏱️ 终止条件:")
+    print("     - 完整匹配>=80% AND 损失<=0.05 AND 步数>=10000")
+    print("     - 或超过最大步数50000（防止死循环）")
     print("=" * 80)
     print()
     
@@ -430,7 +536,8 @@ def main():
         train_data=(train_images, train_labels),
         val_data=(val_images, val_labels),
         callbacks=callbacks,
-        epochs=200  # 200轮上限 + 15轮早停
+        epochs=500,  # 500轮上限（step-based终止会提前停止）
+        use_exponential_decay=True  # 使用指数衰减学习率
     )
     print()
     

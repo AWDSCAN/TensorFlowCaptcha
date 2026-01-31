@@ -10,8 +10,8 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 from PIL import Image
-import config
-import utils
+from ..core import config
+from ..core import utils
 
 
 class CaptchaPredictor:

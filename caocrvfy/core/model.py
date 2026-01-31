@@ -8,7 +8,7 @@ CNN模型定义模块
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers, models
-import config
+from . import config
 
 
 def create_cnn_model():

@@ -8,7 +8,7 @@
 import os
 import numpy as np
 from PIL import Image
-import config
+from . import config
 
 
 def parse_filename(filename):

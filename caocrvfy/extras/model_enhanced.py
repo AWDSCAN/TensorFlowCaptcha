@@ -12,7 +12,7 @@
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers, models
-import config
+from ..core import config
 
 
 class WeightedBinaryCrossentropy(keras.losses.Loss):

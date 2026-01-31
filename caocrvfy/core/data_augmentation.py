@@ -6,7 +6,7 @@
 
 import tensorflow as tf
 import numpy as np
-from config import IMAGE_HEIGHT, IMAGE_WIDTH
+from .config import IMAGE_HEIGHT, IMAGE_WIDTH
 
 
 def random_brightness(image, max_delta=0.2):
