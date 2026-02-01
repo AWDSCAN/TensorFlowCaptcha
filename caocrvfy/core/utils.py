@@ -6,6 +6,7 @@
 """
 
 import os
+import base64
 import numpy as np
 from PIL import Image, ImageEnhance
 from . import config
@@ -21,17 +22,38 @@ except ImportError:
 def parse_filename(filename):
     """
     解析验证码文件名，提取验证码文本
-    文件名格式: 验证码内容-32位hash.png
+    
+    支持两种格式:
+    1. 普通格式: 验证码内容-32位hash.png (如 "abc123-f3b1c8e8adeaeae20f26913b53bbc9d8.png")
+    2. 数学题格式: base64(题目)_答案_16位hash.png (如 "MTkrMz0/_22_abc123def456.png")
     
     参数:
-        filename: 文件名，如 "abc123-f3b1c8e8adeaeae20f26913b53bbc9d8.png"
+        filename: 文件名
     
     返回:
-        验证码文本，如 "abc123"
+        验证码文本
+        - 普通类型: 返回文本内容（如 "abc123"）
+        - 数学题类型: 返回解码后的题目（如 "19+3=?"）
     """
     # 去除扩展名
     name_without_ext = os.path.splitext(filename)[0]
-    # 分割获取验证码内容（hash前面的部分）
+    
+    # 检查是否为数学题格式（包含下划线且有3部分）
+    if '_' in name_without_ext:
+        parts = name_without_ext.split('_')
+        if len(parts) == 3:
+            # 数学题格式: base64_answer_hash
+            try:
+                # 尝试base64解码第一部分
+                base64_text = parts[0]
+                decoded_text = base64.b64decode(base64_text.encode('utf-8')).decode('utf-8')
+                return decoded_text
+            except Exception as e:
+                # 如果解码失败，可能是普通格式的文件名包含下划线，继续尝试普通解析
+                print(f"警告: base64解码失败 {filename}: {e}")
+                pass
+    
+    # 普通格式: 使用'-'分割
     captcha_text = name_without_ext.split('-')[0]
     return captcha_text
 

@@ -4,6 +4,9 @@
 复杂验证码图片生成器
 包含：数字+大小写字母、字符旋转、大小变换、干扰线、噪点、随机背景色、字符颜色变换等
 支持基于captcha库和PIL的双模式生成
+
+数学题命名格式: base64(数学运算题)_运算结果_随机hash.png
+例如: MTkrMz0/_22_abc123def456.png 表示 "19+3=?" 答案是 22
 """
 
 import os
@@ -12,6 +15,7 @@ import string
 import time
 import hashlib
 import platform
+import base64
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 try:
     from captcha.image import ImageCaptcha
@@ -146,13 +150,27 @@ class CaptchaGenerator:
         hash_obj = hashlib.md5(content.encode('utf-8'))
         return hash_obj.hexdigest()  # 返回完整的32位哈希
     
-    def generate_filename(self, text):
+    def generate_filename(self, text, answer=None):
         """
         生成文件名
-        格式：验证码内容-32位hash.png
+        
+        普通类型格式：验证码内容-32位hash.png
+        数学题格式：base64(题目)_答案_16位hash.png
+        
+        参数:
+            text: 验证码文本
+            answer: 答案（仅数学题类型需要）
         """
-        file_hash = self.generate_hash(text)
-        return f"{text}-{file_hash}.png"
+        if self.captcha_type == 'math' and answer is not None:
+            # 数学题：base64编码题目_答案_hash
+            text_base64 = base64.b64encode(text.encode('utf-8')).decode('utf-8')
+            # 使用16位hash（更短的文件名）
+            file_hash = self.generate_hash(text + str(answer))[:16]
+            return f"{text_base64}_{answer}_{file_hash}.png"
+        else:
+            # 普通类型：原有格式
+            file_hash = self.generate_hash(text)
+            return f"{text}-{file_hash}.png"
     
     def generate_captcha_with_lib(self, text):
         """使用captcha库生成验证码"""
@@ -286,8 +304,13 @@ class CaptchaGenerator:
         else:
             image = self.generate_captcha_with_pil(text)
         
-        # 生成文件名（使用答案而不是问题文本）
-        filename = self.generate_filename(answer if self.captcha_type == 'math' else text)
+        # 生成文件名
+        if self.captcha_type == 'math':
+            # 数学题：使用base64(题目)_答案_hash格式
+            filename = self.generate_filename(text, answer)
+        else:
+            # 普通类型：使用text-hash格式
+            filename = self.generate_filename(text)
         
         # 保存图片
         if save_path:
