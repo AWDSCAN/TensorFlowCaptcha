@@ -5,8 +5,9 @@
 包含：数字+大小写字母、字符旋转、大小变换、干扰线、噪点、随机背景色、字符颜色变换等
 支持基于captcha库和PIL的双模式生成
 
-数学题命名格式: base64(数学运算题)_运算结果_随机hash.png
-例如: MTkrMz0/_22_abc123def456.png 表示 "19+3=?" 答案是 22
+数学题命名格式: hex(数学运算题)_运算结果_随机hash.png
+例如: 31392b333d3f_22_abc123def456.png 表示 "19+3=?" 答案是 22
+注: 使用16进制编码题目，避免特殊字符问题
 """
 
 import os
@@ -15,7 +16,8 @@ import string
 import time
 import hashlib
 import platform
-import base64
+import base64  # 保留用于向后兼容旧格式
+import binascii
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 try:
     from captcha.image import ImageCaptcha
@@ -155,18 +157,19 @@ class CaptchaGenerator:
         生成文件名
         
         普通类型格式：验证码内容-32位hash.png
-        数学题格式：base64(题目)_答案_16位hash.png
+        数学题格式：hex(题目)_答案_16位hash.png
         
         参数:
             text: 验证码文本
             answer: 答案（仅数学题类型需要）
         """
         if self.captcha_type == 'math' and answer is not None:
-            # 数学题：base64编码题目_答案_hash
-            text_base64 = base64.b64encode(text.encode('utf-8')).decode('utf-8')
+            # 数学题：16进制编码题目_答案_hash
+            # 使用16进制编码，只包含0-9a-f字符，完全避免特殊字符问题
+            text_hex = binascii.hexlify(text.encode('utf-8')).decode('utf-8')
             # 使用16位hash（更短的文件名）
             file_hash = self.generate_hash(text + str(answer))[:16]
-            return f"{text_base64}_{answer}_{file_hash}.png"
+            return f"{text_hex}_{answer}_{file_hash}.png"
         else:
             # 普通类型：原有格式
             file_hash = self.generate_hash(text)
@@ -306,7 +309,7 @@ class CaptchaGenerator:
         
         # 生成文件名
         if self.captcha_type == 'math':
-            # 数学题：使用base64(题目)_答案_hash格式
+            # 数学题：使用hex(题目)_答案_hash格式
             filename = self.generate_filename(text, answer)
         else:
             # 普通类型：使用text-hash格式

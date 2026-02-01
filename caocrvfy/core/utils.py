@@ -6,7 +6,9 @@
 """
 
 import os
-import base64
+import base64  # 保留用于向后兼容旧格式
+import binascii
+import re
 import numpy as np
 from PIL import Image, ImageEnhance
 from . import config
@@ -23,9 +25,10 @@ def parse_filename(filename):
     """
     解析验证码文件名，提取验证码文本
     
-    支持两种格式:
+    支持三种格式:
     1. 普通格式: 验证码内容-32位hash.png (如 "abc123-f3b1c8e8adeaeae20f26913b53bbc9d8.png")
-    2. 数学题格式: base64(题目)_答案_16位hash.png (如 "MTkrMz0/_22_abc123def456.png")
+    2. 数学题格式(新): hex(题目)_答案_16位hash.png (如 "31392b333d3f_22_abc123def456.png")
+    3. 数学题格式(旧): base64(题目)_答案_16位hash.png (向后兼容)
     
     参数:
         filename: 文件名
@@ -42,15 +45,31 @@ def parse_filename(filename):
     if '_' in name_without_ext:
         parts = name_without_ext.split('_')
         if len(parts) == 3:
-            # 数学题格式: base64_answer_hash
+            # 数学题格式: hex_answer_hash 或 base64_answer_hash(旧格式)
+            encoded_text = parts[0]
+            
+            # 方法1: 尝试16进制解码（新格式，优先）
             try:
-                # 尝试base64解码第一部分
-                base64_text = parts[0]
-                decoded_text = base64.b64decode(base64_text.encode('utf-8')).decode('utf-8')
+                decoded_text = binascii.unhexlify(encoded_text.encode('utf-8')).decode('utf-8')
+                return decoded_text
+            except Exception:
+                pass  # 16进制解码失败，尝试base64
+            
+            # 方法2: 尝试base64解码（旧格式，向后兼容）
+            try:
+                # 添加填充字符'='（如果需要）
+                padding = (4 - len(encoded_text) % 4) % 4
+                base64_text = encoded_text + '=' * padding
+                # 尝试URL-safe解码
+                try:
+                    decoded_text = base64.urlsafe_b64decode(base64_text.encode('utf-8')).decode('utf-8')
+                except Exception:
+                    # 如果URL-safe解码失败，尝试标准base64解码
+                    decoded_text = base64.b64decode(base64_text.encode('utf-8')).decode('utf-8')
                 return decoded_text
             except Exception as e:
-                # 如果解码失败，可能是普通格式的文件名包含下划线，继续尝试普通解析
-                print(f"警告: base64解码失败 {filename}: {e}")
+                # 如果所有解码都失败，可能是普通格式的文件名包含下划线，继续尝试普通解析
+                print(f"警告: 解码失败 {filename}: {e}")
                 pass
     
     # 普通格式: 使用'-'分割
@@ -302,6 +321,130 @@ def get_char_position_accuracy(y_true, y_pred):
     position_accuracy = position_correct / batch_size
     
     return {f'position_{i+1}': acc for i, acc in enumerate(position_accuracy)}
+
+
+def is_math_expression(text):
+    """
+    判断文本是否为数学表达式
+    
+    参数:
+        text: 验证码文本
+    
+    返回:
+        bool: 是否为数学表达式
+    """
+    # 检查是否包含数学运算符
+    math_operators = ['+', '-', '*', '=', '?']
+    return any(op in text for op in math_operators)
+
+
+def extract_answer_from_filename(filename):
+    """
+    从数学题文件名中提取预期答案
+    
+    文件名格式: base64(题目)_答案_hash.png
+    例如: MTkrMz0/_22_abc123.png
+    
+    参数:
+        filename: 文件名
+    
+    返回:
+        str: 预期答案，如果不是数学题格式返回None
+    """
+    name_without_ext = os.path.splitext(filename)[0]
+    
+    # 检查是否为数学题格式（包含下划线且有3部分）
+    if '_' in name_without_ext:
+        parts = name_without_ext.split('_')
+        if len(parts) == 3:
+            try:
+                # 第二部分是答案
+                return parts[1]
+            except:
+                pass
+    
+    return None
+
+
+def evaluate_math_expression(expression):
+    """
+    安全地计算数学表达式的结果
+    
+    参数:
+        expression: 数学表达式字符串，如 "19+3=?" 或 "19+3"
+    
+    返回:
+        计算结果字符串，如果计算失败返回None
+    """
+    try:
+        # 移除问号和等号
+        clean_expr = expression.replace('?', '').replace('=', '').strip()
+        
+        # 只允许数字和基本运算符，防止代码注入
+        if not re.match(r'^[\d\s\+\-\*\/\(\)\.]+$', clean_expr):
+            return None
+        
+        # 使用eval计算（已通过正则过滤，相对安全）
+        result = eval(clean_expr)
+        
+        # 返回整数结果（数学题答案通常是整数）
+        if isinstance(result, float) and result.is_integer():
+            return str(int(result))
+        else:
+            return str(result)
+    
+    except Exception as e:
+        print(f"警告: 数学表达式计算失败 '{expression}': {e}")
+        return None
+
+
+def validate_math_captcha(predicted_text, expected_answer):
+    """
+    验证数学题验证码的三步流程
+    
+    步骤1: 检查识别的数学题文本格式是否正确
+    步骤2: 计算数学题的结果
+    步骤3: 比对计算结果和预期答案
+    
+    参数:
+        predicted_text: 模型识别出的文本（如 "19+3=?"）
+        expected_answer: 从文件名提取的预期答案（如 "22"）
+    
+    返回:
+        dict: 包含验证结果的字典
+        {
+            'step1_recognized': bool,  # 是否成功识别为数学表达式
+            'step2_calculated': str,   # 计算出的答案
+            'step3_matched': bool,     # 计算结果是否匹配预期
+            'is_correct': bool         # 最终是否正确
+        }
+    """
+    result = {
+        'step1_recognized': False,
+        'step2_calculated': None,
+        'step3_matched': False,
+        'is_correct': False
+    }
+    
+    # 步骤1: 检查是否识别为数学表达式
+    if not is_math_expression(predicted_text):
+        return result
+    
+    result['step1_recognized'] = True
+    
+    # 步骤2: 计算数学表达式
+    calculated_answer = evaluate_math_expression(predicted_text)
+    result['step2_calculated'] = calculated_answer
+    
+    if calculated_answer is None:
+        return result
+    
+    # 步骤3: 比对结果
+    if expected_answer is not None and calculated_answer == expected_answer:
+        result['step3_matched'] = True
+        result['is_correct'] = True
+    
+    return result
 
 
 # 测试工具函数
