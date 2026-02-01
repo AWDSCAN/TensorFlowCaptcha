@@ -28,12 +28,16 @@ def random_noise(image, stddev=0.02):
 
 def augment_image(image, training=True):
     """
-    数据增强pipeline
+    数据增强pipeline（优化版）
+    
+    优化说明：
+    1. 减少亮度变化幅度（验证码已有复杂背景）
+    2. 收窄对比度范围（避免过度失真）
+    3. 移除随机噪声（验证码本身已有1000-1500个噪点）
     
     参考trains.py的思路：
     1. 亮度变化（模拟不同光照条件）
     2. 对比度变化（增强泛化）
-    3. 添加噪声（模拟真实干扰）
     
     Args:
         image: 输入图像 [H, W, C]
@@ -45,17 +49,18 @@ def augment_image(image, training=True):
     if not training:
         return image
     
-    # 随机应用亮度调整（50%概率）
+    # 随机应用亮度调整（50%概率，±10%，从±15%减少）
     if tf.random.uniform([]) > 0.5:
-        image = random_brightness(image, max_delta=0.15)
+        image = random_brightness(image, max_delta=0.10)
     
-    # 随机应用对比度调整（50%概率）
+    # 随机应用对比度调整（50%概率，90%-110%，从85%-115%收窄）
     if tf.random.uniform([]) > 0.5:
-        image = random_contrast(image, lower=0.85, upper=1.15)
+        image = random_contrast(image, lower=0.90, upper=1.10)
     
-    # 随机添加噪声（30%概率，模拟验证码干扰线）
-    if tf.random.uniform([]) > 0.7:
-        image = random_noise(image, stddev=0.015)
+    # 【移除】随机噪声（验证码本身已有1000-1500个噪点，不需要额外噪声）
+    # 原因：过多噪声会干扰字符特征学习
+    # if tf.random.uniform([]) > 0.7:
+    #     image = random_noise(image, stddev=0.015)
     
     # 确保像素值在[0, 1]范围内
     image = tf.clip_by_value(image, 0.0, 1.0)

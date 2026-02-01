@@ -7,8 +7,15 @@
 
 import os
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageEnhance
 from . import config
+
+try:
+    import cv2
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+    print("警告: opencv-python未安装，图片预处理将使用基础模式。可通过 'pip install opencv-python' 安装获得更好效果")
 
 
 def parse_filename(filename):
@@ -91,12 +98,92 @@ def vector_to_text(vector, threshold=0.5):
     return result
 
 
-def load_image(image_path):
+def preprocess_captcha_with_cv2(img):
+    """
+    使用OpenCV进行验证码预处理：去除干扰线和噪点
+    
+    处理步骤:
+    1. 灰度化
+    2. CLAHE对比度增强
+    3. 自适应阈值二值化
+    4. 形态学开运算去噪
+    5. 转回RGB格式
+    
+    参数:
+        img: PIL.Image对象
+    
+    返回:
+        PIL.Image对象（预处理后）
+    """
+    # 转换为numpy数组
+    img_array = np.array(img)
+    
+    # 1. 转为灰度图
+    gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+    
+    # 2. CLAHE对比度增强（拉伸字符与背景的差异）
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(gray)
+    
+    # 3. 自适应阈值二值化（去除背景和干扰线）
+    binary = cv2.adaptiveThreshold(
+        enhanced, 255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        blockSize=11,
+        C=2
+    )
+    
+    # 4. 形态学操作：开运算去除小噪点
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+    opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
+    
+    # 5. 转回RGB格式（复制3通道）
+    rgb_preprocessed = cv2.cvtColor(opened, cv2.COLOR_GRAY2RGB)
+    
+    return Image.fromarray(rgb_preprocessed)
+
+
+def preprocess_captcha_with_pil(img):
+    """
+    使用PIL进行基础验证码预处理（当OpenCV不可用时）
+    
+    处理步骤:
+    1. 转为灰度
+    2. 增强对比度
+    3. 锐化
+    4. 转回RGB
+    
+    参数:
+        img: PIL.Image对象
+    
+    返回:
+        PIL.Image对象（预处理后）
+    """
+    # 1. 转为灰度
+    gray = img.convert('L')
+    
+    # 2. 增强对比度
+    enhancer = ImageEnhance.Contrast(gray)
+    enhanced = enhancer.enhance(2.0)
+    
+    # 3. 锐化
+    from PIL import ImageFilter
+    sharpened = enhanced.filter(ImageFilter.SHARPEN)
+    
+    # 4. 转回RGB
+    rgb = sharpened.convert('RGB')
+    
+    return rgb
+
+
+def load_image(image_path, use_preprocessing=True):
     """
     加载并预处理验证码图像
     
     参数:
         image_path: 图像文件路径
+        use_preprocessing: 是否使用预处理去除干扰（默认True）
     
     返回:
         numpy数组，形状为 (IMAGE_HEIGHT, IMAGE_WIDTH, IMAGE_CHANNELS)
@@ -108,6 +195,13 @@ def load_image(image_path):
     # 确保图像是RGB模式
     if img.mode != 'RGB':
         img = img.convert('RGB')
+    
+    # 去干扰预处理
+    if use_preprocessing:
+        if CV2_AVAILABLE:
+            img = preprocess_captcha_with_cv2(img)
+        else:
+            img = preprocess_captcha_with_pil(img)
     
     # 调整图像尺寸
     img = img.resize((config.IMAGE_WIDTH, config.IMAGE_HEIGHT), Image.Resampling.LANCZOS)
