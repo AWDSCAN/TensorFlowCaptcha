@@ -31,17 +31,17 @@ from core.callbacks import create_callbacks
 from trainer import CaptchaTrainer
 from core.evaluator import CaptchaEvaluator
 
-# 选择使用增强版模型还是基础模型
-USE_ENHANCED_MODEL = True
+# 选择使用增强版模型还是ResNet-34模型
+USE_ENHANCED_MODEL = False  # 改为False以使用ResNet-34
 
 if USE_ENHANCED_MODEL:
     from extras.model_enhanced import create_enhanced_cnn_model as create_model
     from extras.model_enhanced import compile_model, print_model_summary
     print("使用增强版CNN模型（5层卷积 + BatchNorm + 更大FC层 + 数据增强 + Focal Loss）")
 else:
-    from model import create_cnn_model as create_model
-    from model import compile_model, print_model_summary
-    print("使用基础版CNN模型（3层卷积）")
+    from core.model import create_cnn_model as create_model
+    from core.model import compile_model, print_model_summary
+    print("使用ResNet-34模型（34层残差网络 + LSTM + 自适应学习率）")
 
 
 def save_model(model, save_path=None):
@@ -134,19 +134,19 @@ def main():
     print("步骤 4/5: 训练模型")
     print("-" * 80)
     
-    # 创建回调（模块化）- 优化训练策略
-    # 观察：79.5%后波动，需要更多步数和更频繁验证
+    # 创建回调（模块化）- ResNet-34优化策略
     callbacks = create_callbacks(
         model_dir=config.MODEL_DIR,
         log_dir=config.LOG_DIR,
         val_data=(val_images, val_labels),
-        use_step_based=True,  # 使用step-based策略（参考trains.py）
-        use_early_stopping=False,  # 不使用早停（已有多条件终止）
+        use_step_based=True,  # 使用step-based策略
+        use_early_stopping=False,  # 不使用早停
+        use_adaptive_lr=True,  # ✅ 启用自适应学习率
         checkpoint_save_step=500,  # 每500步保存checkpoint
-        validation_steps=300,  # 每300步验证（更频繁观察，原500）
-        max_checkpoints_keep=3,  # 只保留最近3个checkpoint（节省磁盘空间）
-        end_acc=0.82,  # 目标准确率82%（观察到79.5%峰值，设定更现实目标）
-        max_steps=200000  # 增加到200000步（再给50000步突破机会）
+        validation_steps=300,  # 每300步验证
+        max_checkpoints_keep=3,  # 只保留最近3个checkpoint
+        end_acc=0.85,  # 目标准确率85%（ResNet-34更高目标）
+        max_steps=200000  # 最大200000步
     )
     
     # 创建训练器（模块化）

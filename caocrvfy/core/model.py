@@ -8,19 +8,117 @@ CNN模型定义模块
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers, models
-from . import config
+
+# 支持直接运行和模块导入两种方式
+if __name__ == '__main__':
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    import config
+else:
+    from . import config
+
+
+def residual_block(x, filters, stride=1, conv_shortcut=False, name='residual'):
+    """
+    ResNet残差块
+    
+    参数:
+        x: 输入张量
+        filters: 滤波器数量
+        stride: 步长
+        conv_shortcut: 是否使用卷积捷径
+        name: 层名称前缀（默认'residual'）
+    
+    返回:
+        残差块输出
+    """
+    bn_axis = 3  # channels_last格式
+    
+    if conv_shortcut:
+        shortcut = layers.Conv2D(
+            filters,
+            1,
+            strides=stride,
+            padding='same',
+            name=f'{name}_0_conv' if name else None
+        )(x)
+        shortcut = layers.BatchNormalization(
+            axis=bn_axis,
+            name=f'{name}_0_bn' if name else None
+        )(shortcut)
+    else:
+        if stride > 1:
+            shortcut = layers.MaxPooling2D(1, strides=stride)(x)
+        else:
+            shortcut = x
+    
+    # 第一个卷积
+    x = layers.Conv2D(
+        filters,
+        3,
+        strides=stride,
+        padding='same',
+        name=f'{name}_1_conv' if name else None
+    )(x)
+    x = layers.BatchNormalization(axis=bn_axis, name=f'{name}_1_bn' if name else None)(x)
+    x = layers.Activation('relu', name=f'{name}_1_relu' if name else None)(x)
+    
+    # 第二个卷积
+    x = layers.Conv2D(
+        filters,
+        3,
+        padding='same',
+        name=f'{name}_2_conv' if name else None
+    )(x)
+    x = layers.BatchNormalization(axis=bn_axis, name=f'{name}_2_bn' if name else None)(x)
+    
+    # 残差连接
+    x = layers.Add(name=f'{name}_add' if name else None)([shortcut, x])
+    x = layers.Activation('relu', name=f'{name}_out' if name else None)(x)
+    
+    return x
+
+
+def residual_stack(x, filters, blocks, stride=1, name='stack'):
+    """
+    ResNet残差堆叠
+    
+    参数:
+        x: 输入张量
+        filters: 滤波器数量
+        blocks: 残差块数量
+        stride: 第一个块的步长
+        name: 名称前缀（默认'stack'）
+    
+    返回:
+        堆叠输出
+    """
+    # 第一个残差块（可能有stride）
+    x = residual_block(x, filters, stride=stride, conv_shortcut=True, name=f'{name}_block1' if name else 'block1')
+    
+    # 后续残差块
+    for i in range(2, blocks + 1):
+        x = residual_block(x, filters, name=f'{name}_block{i}' if name else f'block{i}')
+    
+    return x
 
 
 def create_cnn_model():
     """
-    创建验证码识别CNN模型
+    创建验证码识别ResNet-34模型
     
     架构:
-        - 3层卷积层 (32 → 64 → 64 filters, 3×3 kernel)
-        - 每层卷积后接MaxPooling (2×2)
-        - Dropout层 (0.25)
-        - 全连接层 (1024 units)
+        - 初始卷积层: Conv2D(64, 7×7) + BN + ReLU + MaxPool
+        - conv2_x: 3个残差块 × 64 filters
+        - conv3_x: 4个残差块 × 128 filters (stride=2)
+        - conv4_x: 6个残差块 × 256 filters (stride=2)
+        - conv5_x: 3个残差块 × 512 filters (stride=2)
+        - 双向LSTM层 (256 units) - 序列建模
+        - 全连接层 (2048 units) + Dropout(0.5)
         - 输出层 (OUTPUT_SIZE units)
+    
+    总计: 1 + (3+4+6+3)×2 + 1 + 1 = 34层
     
     返回:
         Keras模型
@@ -31,48 +129,53 @@ def create_cnn_model():
         name='input_image'
     )
     
-    # 第一层卷积
+    # ==================== Stage 1: 初始卷积 ====================
     x = layers.Conv2D(
-        filters=config.CONV_FILTERS[0],
-        kernel_size=(3, 3),
+        64,
+        7,
+        strides=2,
         padding='same',
-        activation='relu',
-        name='conv1'
+        name='conv1_conv'
     )(inputs)
-    x = layers.MaxPooling2D(pool_size=(2, 2), name='pool1')(x)
+    x = layers.BatchNormalization(axis=3, name='conv1_bn')(x)
+    x = layers.Activation('relu', name='conv1_relu')(x)
+    x = layers.MaxPooling2D(3, strides=2, padding='same', name='pool1_pool')(x)
     
-    # 第二层卷积
-    x = layers.Conv2D(
-        filters=config.CONV_FILTERS[1],
-        kernel_size=(3, 3),
-        padding='same',
-        activation='relu',
-        name='conv2'
+    # ==================== Stage 2: conv2_x (3个残差块) ====================
+    x = residual_stack(x, 64, 3, stride=1, name='conv2')
+    
+    # ==================== Stage 3: conv3_x (4个残差块) ====================
+    x = residual_stack(x, 128, 4, stride=2, name='conv3')
+    
+    # ==================== Stage 4: conv4_x (6个残差块) ====================
+    x = residual_stack(x, 256, 6, stride=2, name='conv4')
+    
+    # ==================== Stage 5: conv5_x (3个残差块) ====================
+    x = residual_stack(x, 512, 3, stride=2, name='conv5')
+    
+    # ==================== 序列建模层 ====================
+    # 获取特征图的shape进行reshape
+    shape = x.shape
+    # 将特征图reshape为序列形式: (batch, width, height*channels)
+    x = layers.Reshape((shape[2], shape[1] * shape[3]), name='reshape_for_lstm')(x)
+    
+    # 双向LSTM层（256 units，学习字符序列依赖关系）
+    x = layers.Bidirectional(
+        layers.LSTM(256, return_sequences=True),
+        name='bidirectional_lstm'
     )(x)
-    x = layers.MaxPooling2D(pool_size=(2, 2), name='pool2')(x)
     
-    # 第三层卷积
-    x = layers.Conv2D(
-        filters=config.CONV_FILTERS[2],
-        kernel_size=(3, 3),
-        padding='same',
-        activation='relu',
-        name='conv3'
-    )(x)
-    x = layers.MaxPooling2D(pool_size=(2, 2), name='pool3')(x)
-    
-    # Dropout层
-    x = layers.Dropout(config.DROPOUT_RATE, name='dropout')(x)
-    
-    # 展平层
+    # 展平LSTM输出
     x = layers.Flatten(name='flatten')(x)
     
-    # 全连接层
+    # ==================== 全连接层 ====================
     x = layers.Dense(
-        config.FC_UNITS,
+        2048,
         activation='relu',
+        kernel_regularizer=keras.regularizers.l2(0.001),
         name='fc'
     )(x)
+    x = layers.Dropout(0.5, name='dropout_fc')(x)  # 只在全连接层使用dropout
     
     # 输出层
     outputs = layers.Dense(
@@ -82,7 +185,7 @@ def create_cnn_model():
     )(x)
     
     # 创建模型
-    model = models.Model(inputs=inputs, outputs=outputs, name='captcha_cnn')
+    model = models.Model(inputs=inputs, outputs=outputs, name='captcha_resnet34')
     
     return model
 
@@ -147,7 +250,15 @@ def print_model_summary(model):
 
 # 测试模型创建
 if __name__ == '__main__':
-    print("测试CNN模型创建...")
+    import sys
+    import os
+    
+    # 添加父目录到路径
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    
+    import config
+    
+    print("测试ResNet-34模型创建...")
     print()
     
     # 创建模型
@@ -177,11 +288,7 @@ if __name__ == '__main__':
     print(f"输出形状: {output.shape}")
     print(f"输出值范围: [{output.min():.4f}, {output.max():.4f}]")
     
-    # 测试解码
-    import utils
-    predicted_text = utils.vector_to_text(output[0])
-    print(f"预测验证码: {predicted_text}")
-    
     print()
     print("=" * 80)
-    print("✓ 模型创建测试完成")
+    print("✓ ResNet-34模型创建测试完成")
+    print("=" * 80)

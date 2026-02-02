@@ -106,14 +106,15 @@ def vector_to_text(vector, threshold=0.5):
 
 def preprocess_captcha_with_cv2(img):
     """
-    使用OpenCV进行验证码预处理：去除干扰线和噪点
+    使用OpenCV进行验证码预处理：颜色归一化 + 去除干扰线和噪点
     
     处理步骤:
-    1. 灰度化
+    1. 颜色归一化（将所有颜色统一转换为黑白）
     2. CLAHE对比度增强
     3. 自适应阈值二值化
-    4. 形态学开运算去噪
-    5. 转回RGB格式
+    4. 形态学操作去噪
+    5. 反转颜色（黑底白字 -> 白底黑字）
+    6. 转回RGB格式
     
     参数:
         img: PIL.Image对象
@@ -124,28 +125,42 @@ def preprocess_captcha_with_cv2(img):
     # 转换为numpy数组
     img_array = np.array(img)
     
-    # 1. 转为灰度图
+    # 1. 转为灰度图（颜色归一化第一步）
     gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
     
-    # 2. CLAHE对比度增强（拉伸字符与背景的差异）
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    enhanced = clahe.apply(gray)
+    # 2. 高斯模糊去除噪点
+    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
     
-    # 3. 自适应阈值二值化（去除背景和干扰线）
-    binary = cv2.adaptiveThreshold(
-        enhanced, 255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY,
-        blockSize=11,
-        C=2
-    )
+    # 3. CLAHE对比度自适应增强（更激进的参数）
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(blurred)
     
-    # 4. 形态学操作：开运算去除小噪点
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-    opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
+    # 4. Otsu's二值化（自动找最佳阈值，比自适应阈值更统一）
+    _, binary = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     
-    # 5. 转回RGB格式（复制3通道）
-    rgb_preprocessed = cv2.cvtColor(opened, cv2.COLOR_GRAY2RGB)
+    # 5. 形态学操作：先开运算去噪，再闭运算连接字符
+    kernel_small = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+    kernel_medium = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    
+    # 开运算去除小噪点
+    opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel_small, iterations=1)
+    
+    # 闭运算连接字符断裂部分
+    closed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, kernel_medium, iterations=1)
+    
+    # 6. 反转颜色（如果背景是深色）
+    # 计算图像平均亮度，如果平均值<128说明是黑底白字，需要反转
+    if np.mean(closed) < 128:
+        closed = cv2.bitwise_not(closed)
+    
+    # 7. 锐化增强字符边缘
+    kernel_sharpen = np.array([[-1, -1, -1],
+                               [-1,  9, -1],
+                               [-1, -1, -1]])
+    sharpened = cv2.filter2D(closed, -1, kernel_sharpen)
+    
+    # 8. 转回RGB格式（3通道，但所有通道相同，纯黑白）
+    rgb_preprocessed = cv2.cvtColor(sharpened, cv2.COLOR_GRAY2RGB)
     
     return Image.fromarray(rgb_preprocessed)
 
@@ -153,12 +168,14 @@ def preprocess_captcha_with_cv2(img):
 def preprocess_captcha_with_pil(img):
     """
     使用PIL进行基础验证码预处理（当OpenCV不可用时）
+    强化版：颜色归一化 + 对比度增强
     
     处理步骤:
-    1. 转为灰度
-    2. 增强对比度
+    1. 转为灰度（颜色归一化）
+    2. 增强对比度（更激进）
     3. 锐化
-    4. 转回RGB
+    4. 二值化（转为纯黑白）
+    5. 转回RGB
     
     参数:
         img: PIL.Image对象
@@ -166,19 +183,34 @@ def preprocess_captcha_with_pil(img):
     返回:
         PIL.Image对象（预处理后）
     """
-    # 1. 转为灰度
+    from PIL import ImageFilter, ImageOps
+    
+    # 1. 转为灰度（统一所有颜色）
     gray = img.convert('L')
     
-    # 2. 增强对比度
+    # 2. 增强对比度（提高字符与背景的区分度）
     enhancer = ImageEnhance.Contrast(gray)
-    enhanced = enhancer.enhance(2.0)
+    enhanced = enhancer.enhance(3.0)  # 从2.0提高到3.0
     
-    # 3. 锐化
-    from PIL import ImageFilter
-    sharpened = enhanced.filter(ImageFilter.SHARPEN)
+    # 3. 增强亮度（确保字符清晰）
+    brightness_enhancer = ImageEnhance.Brightness(enhanced)
+    brightened = brightness_enhancer.enhance(1.2)
     
-    # 4. 转回RGB
-    rgb = sharpened.convert('RGB')
+    # 4. 锐化（增强边缘）
+    sharpened = brightened.filter(ImageFilter.SHARPEN)
+    sharpened = sharpened.filter(ImageFilter.SHARPEN)  # 二次锐化
+    
+    # 5. 二值化（转为纯黑白，去除所有灰度）
+    threshold = 128
+    binary = sharpened.point(lambda x: 255 if x > threshold else 0, mode='1')
+    
+    # 6. 检查是否需要反转（黑底白字 -> 白底黑字）
+    img_array = np.array(binary)
+    if np.mean(img_array) < 128:  # 如果平均值低，说明是黑底
+        binary = ImageOps.invert(binary)
+    
+    # 7. 转回RGB格式
+    rgb = binary.convert('RGB')
     
     return rgb
 

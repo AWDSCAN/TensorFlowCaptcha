@@ -11,6 +11,67 @@ from tensorflow import keras
 from . import utils
 
 
+class AdaptiveLearningRate(keras.callbacks.ReduceLROnPlateau):
+    """
+    自适应学习率回调（扩展ReduceLROnPlateau）
+    
+    功能：
+    - 监控验证损失，自动降低学习率
+    - 打印学习率调整信息
+    - 支持自定义降低策略
+    """
+    def __init__(self, monitor='val_loss', factor=0.5, patience=5, 
+                 min_lr=1e-7, verbose=1, **kwargs):
+        """
+        参数:
+            monitor: 监控指标（默认：验证损失）
+            factor: 学习率降低因子（默认：0.5，即减半）
+            patience: 耐心值，N轮无改善后降低学习率
+            min_lr: 最小学习率
+            verbose: 日志详细程度
+        """
+        super().__init__(
+            monitor=monitor,
+            factor=factor,
+            patience=patience,
+            min_lr=min_lr,
+            verbose=verbose,
+            mode='min',
+            **kwargs
+        )
+        self.initial_lr = None
+    
+    def on_train_begin(self, logs=None):
+        # 记录初始学习率
+        try:
+            self.initial_lr = float(self.model.optimizer.learning_rate.numpy())
+        except:
+            try:
+                import tensorflow.keras.backend as K
+                self.initial_lr = float(K.get_value(self.model.optimizer.lr))
+            except:
+                self.initial_lr = 0.001
+        print(f"\n📊 自适应学习率已启用")
+        print(f"   初始学习率: {self.initial_lr:.6f}")
+        print(f"   监控指标: {self.monitor}")
+        print(f"   降低因子: {self.factor}")
+        print(f"   耐心值: {self.patience} epochs")
+        print(f"   最小学习率: {self.min_lr:.2e}\n")
+    
+    def on_epoch_end(self, epoch, logs=None):
+        # 调用父类逻辑
+        old_lr = float(self.model.optimizer.learning_rate.numpy())
+        super().on_epoch_end(epoch, logs)
+        new_lr = float(self.model.optimizer.learning_rate.numpy())
+        
+        # 如果学习率发生变化，打印详细信息
+        if old_lr != new_lr:
+            reduction_percentage = (1 - new_lr / old_lr) * 100
+            print(f"\n🔻 学习率已调整！")
+            print(f"   {old_lr:.6f} → {new_lr:.6f} (降低 {reduction_percentage:.1f}%)")
+            print(f"   原因: {self.monitor} 在 {self.patience} 轮内无改善")
+
+
 class DelayedEarlyStopping(keras.callbacks.EarlyStopping):
     """
     延迟早停回调：在指定轮次之前不触发早停
@@ -287,6 +348,7 @@ class StepBasedCallbacks(keras.callbacks.Callback):
 
 def create_callbacks(model_dir, log_dir, val_data, 
                      use_step_based=True, use_early_stopping=False,
+                     use_adaptive_lr=True,  # 新增：自适应学习率
                      checkpoint_save_step=500, validation_steps=500,
                      max_checkpoints_keep=5, end_acc=0.85, max_steps=150000):
     """
@@ -301,6 +363,7 @@ def create_callbacks(model_dir, log_dir, val_data,
         val_data: 验证数据 (X, y)
         use_step_based: 是否使用step-based策略
         use_early_stopping: 是否使用早停（不建议与step-based同时使用）
+        use_adaptive_lr: 是否使用自适应学习率（默认True）
         checkpoint_save_step: checkpoint保存间隔（步）- 默认500步（避免磁盘占满）
         validation_steps: 验证间隔（步）- 默认500步
         max_checkpoints_keep: 最多保留的checkpoint数量（默认5个）
@@ -318,7 +381,19 @@ def create_callbacks(model_dir, log_dir, val_data,
     
     callbacks = []
     
-    # 1. 模型检查点：保存最优模型
+    # 1. 自适应学习率（优先级最高，最先添加）
+    if use_adaptive_lr:
+        adaptive_lr = AdaptiveLearningRate(
+            monitor='val_loss',
+            factor=0.5,  # 学习率减半
+            patience=5,  # 5轮无改善后降低
+            min_lr=1e-7,  # 最小学习率
+            verbose=1
+        )
+        callbacks.append(adaptive_lr)
+        print("✓ 自适应学习率已启用")
+    
+    # 2. 模型检查点：保存最优模型
     checkpoint_path = os.path.join(model_dir, 'best_model.keras')
     checkpoint = keras.callbacks.ModelCheckpoint(
         filepath=checkpoint_path,
