@@ -34,20 +34,16 @@ ALPHA_UPPER = string.ascii_uppercase  # A-Z
 ALPHA_LOWER = string.ascii_lowercase  # a-z
 ALPHA_ALL = string.ascii_letters  # A-Z + a-z
 
-# 数学运算符（用于数学题类型）
-MATH_OPERATORS = '+-*=?'  # 加、减、乘、等号、问号
-
-# 完整字符集（数字+大小写字母+填充字符+数学运算符）
+# 完整字符集（数字+大小写字母+填充字符）
 PADDING_CHAR = ' '  # 使用空格作为填充字符
-CHAR_SET = DIGITS + ALPHA_ALL + PADDING_CHAR + MATH_OPERATORS  # 0-9 + A-Z + a-z + ' ' + +-*=?
+CHAR_SET = DIGITS + ALPHA_ALL + PADDING_CHAR  # 0-9 + A-Z + a-z + ' '
 
 # 字符集大小
-CHAR_SET_LEN = len(CHAR_SET)  # 68个字符 (原63 + 5个运算符)
+CHAR_SET_LEN = len(CHAR_SET)  # 63个字符
 
 # 验证码最大长度
-# 新规则：支持4位、6位普通验证码，以及5位(一位数运算)和7位(两位数运算)数学题
-# 统一设置为7以支持最长情况（两位数运算如"12*24=?"）
-MAX_CAPTCHA = 7  # 支持4/6位普通验证码，5/7位数学题
+# 新规则：支持4位、6位普通验证码
+MAX_CAPTCHA = 6  # 支持4/6位普通验证码
 
 # ==================== 模型架构参数 ====================
 # 卷积层配置（三层卷积架构）

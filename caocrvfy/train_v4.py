@@ -169,16 +169,16 @@ def main():
     print("步骤 5/5: 评估模型")
     print("-" * 80)
     
-    # 创建评估器（模块化）- 传入image_paths以支持数学题三步验证
+    # 创建评估器（模块化）
     evaluator = CaptchaEvaluator(
         model=trainer.get_model(),
-        image_paths=loader.image_paths  # 用于提取数学题预期答案
+        image_paths=loader.image_paths
     )
     
-    # 生成评估报告（包含数学题三步验证）
+    # 生成评估报告
     metrics = evaluator.generate_report(
         val_data=(val_images, val_labels),
-        include_math_validation=True  # 启用数学题三步验证
+        include_math_validation=False
     )
     print()
     

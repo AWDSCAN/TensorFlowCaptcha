@@ -25,52 +25,17 @@ def parse_filename(filename):
     """
     解析验证码文件名，提取验证码文本
     
-    支持三种格式:
-    1. 普通格式: 验证码内容-32位hash.png (如 "abc123-f3b1c8e8adeaeae20f26913b53bbc9d8.png")
-    2. 数学题格式(新): hex(题目)_答案_16位hash.png (如 "31392b333d3f_22_abc123def456.png")
-    3. 数学题格式(旧): base64(题目)_答案_16位hash.png (向后兼容)
+    支持格式:
+    普通格式: 验证码内容-32位hash.png (如 "abc123-f3b1c8e8adeaeae20f26913b53bbc9d8.png")
     
     参数:
         filename: 文件名
     
     返回:
-        验证码文本
-        - 普通类型: 返回文本内容（如 "abc123"）
-        - 数学题类型: 返回解码后的题目（如 "19+3=?"）
+        验证码文本 (如 "abc123")
     """
     # 去除扩展名
     name_without_ext = os.path.splitext(filename)[0]
-    
-    # 检查是否为数学题格式（包含下划线且有3部分）
-    if '_' in name_without_ext:
-        parts = name_without_ext.split('_')
-        if len(parts) == 3:
-            # 数学题格式: hex_answer_hash 或 base64_answer_hash(旧格式)
-            encoded_text = parts[0]
-            
-            # 方法1: 尝试16进制解码（新格式，优先）
-            try:
-                decoded_text = binascii.unhexlify(encoded_text.encode('utf-8')).decode('utf-8')
-                return decoded_text
-            except Exception:
-                pass  # 16进制解码失败，尝试base64
-            
-            # 方法2: 尝试base64解码（旧格式，向后兼容）
-            try:
-                # 添加填充字符'='（如果需要）
-                padding = (4 - len(encoded_text) % 4) % 4
-                base64_text = encoded_text + '=' * padding
-                # 尝试URL-safe解码
-                try:
-                    decoded_text = base64.urlsafe_b64decode(base64_text.encode('utf-8')).decode('utf-8')
-                except Exception:
-                    # 如果URL-safe解码失败，尝试标准base64解码
-                    decoded_text = base64.b64decode(base64_text.encode('utf-8')).decode('utf-8')
-                return decoded_text
-            except Exception as e:
-                # 如果所有解码都失败，可能是普通格式的文件名包含下划线，继续尝试普通解析
-                print(f"警告: 解码失败 {filename}: {e}")
-                pass
     
     # 普通格式: 使用'-'分割
     captcha_text = name_without_ext.split('-')[0]

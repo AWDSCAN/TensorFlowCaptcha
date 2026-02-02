@@ -36,7 +36,7 @@ class CaptchaGenerator:
         :param width: 验证码宽度
         :param height: 验证码高度
         :param mode: 生成模式 'captcha' 或 'pil'
-        :param captcha_type: 验证码类型 'digit'(纯数字), 'alpha'(纯字母), 'mixed'(混合), 'math'(算术)
+        :param captcha_type: 验证码类型 'digit'(纯数字), 'alpha'(纯字母), 'mixed'(混合)
         """
         self.width = width
         self.height = height
@@ -92,62 +92,31 @@ class CaptchaGenerator:
         """
         根据类型生成随机验证码文本
         新规则：验证码长度只有4位或6位
-        :return: (text, answer) 验证码文本和答案（算术题会返回答案）
+        :return: text 验证码文本
         """
         if self.captcha_type == 'digit':
             # 纯数字：4位或6位
             length = random.choice([4, 6])
             text = ''.join(random.choices(self.digits, k=length))
-            return text, text
+            return text
             
         elif self.captcha_type == 'alpha':
             # 纯字母（大小写混合）：4位或6位
             length = random.choice([4, 6])
             text = ''.join(random.choices(self.alpha_all, k=length))
-            return text, text
+            return text
             
         elif self.captcha_type == 'mixed':
             # 数字+字母混合：4位或6位
             length = random.choice([4, 6])
             text = ''.join(random.choices(self.charset, k=length))
-            return text, text
-            
-        elif self.captcha_type == 'math':
-            # 数学算术问题：一位数运算(5位) 或 两位数运算(7位)
-            # 50% 概率选择一位数或两位数运算
-            use_two_digits = random.random() < 0.5
-            
-            if use_two_digits:
-                # 两位数与两位数运算（题目长度7位，如"12*24=?"）
-                num1 = random.randint(10, 99)
-                num2 = random.randint(10, 99)
-            else:
-                # 一位数与一位数运算（题目长度5位，如"8-2=?"）
-                num1 = random.randint(1, 9)
-                num2 = random.randint(1, 9)
-            
-            operator = random.choice(['+', '-', '*'])
-            
-            if operator == '+':
-                answer = num1 + num2
-                text = f"{num1}+{num2}=?"
-            elif operator == '-':
-                # 确保结果为非负数
-                if num1 < num2:
-                    num1, num2 = num2, num1
-                answer = num1 - num2
-                text = f"{num1}-{num2}=?"
-            else:  # *
-                answer = num1 * num2
-                text = f"{num1}*{num2}=?"
-            
-            return text, str(answer)
+            return text
         
         else:
             # 默认混合模式：4位或6位
             length = random.choice([4, 6])
             text = ''.join(random.choices(self.charset, k=length))
-            return text, text
+            return text
     
     def generate_hash(self, text):
         """
@@ -160,28 +129,18 @@ class CaptchaGenerator:
         hash_obj = hashlib.md5(content.encode('utf-8'))
         return hash_obj.hexdigest()  # 返回完整的32位哈希
     
-    def generate_filename(self, text, answer=None):
+    def generate_filename(self, text):
         """
         生成文件名
         
-        普通类型格式：验证码内容-32位hash.png
-        数学题格式：hex(题目)_答案_16位hash.png
+        格式：验证码内容-32位hash.png
         
         参数:
             text: 验证码文本
-            answer: 答案（仅数学题类型需要）
         """
-        if self.captcha_type == 'math' and answer is not None:
-            # 数学题：16进制编码题目_答案_hash
-            # 使用16进制编码，只包含0-9a-f字符，完全避免特殊字符问题
-            text_hex = binascii.hexlify(text.encode('utf-8')).decode('utf-8')
-            # 使用16位hash（更短的文件名）
-            file_hash = self.generate_hash(text + str(answer))[:16]
-            return f"{text_hex}_{answer}_{file_hash}.png"
-        else:
-            # 普通类型：原有格式
-            file_hash = self.generate_hash(text)
-            return f"{text}-{file_hash}.png"
+        # 普通类型：原有格式
+        file_hash = self.generate_hash(text)
+        return f"{text}-{file_hash}.png"
     
     def generate_captcha_with_lib(self, text):
         """使用captcha库生成验证码"""
@@ -199,24 +158,20 @@ class CaptchaGenerator:
         image = Image.new('RGB', (self.width, self.height), bg_color)
         draw = ImageDraw.Draw(image)
         
-        # 数学题类型不添加干扰，保持简洁
-        is_math_type = self.captcha_type == 'math'
+        # 绘制底层干扰线（背景层）
+        for _ in range(random.randint(6, 10)):
+            line_color = self.get_random_color(100, 200)
+            draw.line([
+                (random.randint(0, self.width), random.randint(0, self.height)),
+                (random.randint(0, self.width), random.randint(0, self.height))
+            ], fill=line_color, width=random.randint(1, 2))
         
-        if not is_math_type:
-            # 绘制底层干扰线（背景层）
-            for _ in range(random.randint(6, 10)):
-                line_color = self.get_random_color(100, 200)
-                draw.line([
-                    (random.randint(0, self.width), random.randint(0, self.height)),
-                    (random.randint(0, self.width), random.randint(0, self.height))
-                ], fill=line_color, width=random.randint(1, 2))
-            
-            # 绘制噪点（增加数量）
-            for _ in range(random.randint(1000, 1500)):
-                draw.point(
-                    (random.randint(0, self.width), random.randint(0, self.height)),
-                    fill=self.get_random_color(150, 255)
-                )
+        # 绘制噪点（增加数量）
+        for _ in range(random.randint(1000, 1500)):
+            draw.point(
+                (random.randint(0, self.width), random.randint(0, self.height)),
+                fill=self.get_random_color(150, 255)
+            )
         
         # 获取系统字体
         font_path = self.get_system_font()
@@ -253,46 +208,44 @@ class CaptchaGenerator:
             # 粘贴字符
             image.paste(char_img, (x, y), char_img)
         
-        # 数学题类型不添加干扰线和模糊效果
-        if not is_math_type:
-            # 绘制中间层干扰线（穿过字符）
-            draw = ImageDraw.Draw(image)
-            for _ in range(random.randint(4, 7)):
-                line_color = self.get_random_color(80, 180)
-                # 绘制穿过验证码中间区域的线条
-                x1 = random.randint(0, self.width)
-                y1 = random.randint(self.height // 4, self.height * 3 // 4)
-                x2 = random.randint(0, self.width)
-                y2 = random.randint(self.height // 4, self.height * 3 // 4)
-                draw.line([(x1, y1), (x2, y2)], fill=line_color, width=random.randint(1, 3))
-            
-            # 绘制顶层干扰线
-            for _ in range(random.randint(3, 6)):
-                line_color = self.get_random_color(120, 200)
-                draw.line([
-                    (random.randint(0, self.width), random.randint(0, self.height)),
-                    (random.randint(0, self.width), random.randint(0, self.height))
-                ], fill=line_color, width=1)
-            
-            # 添加随机干扰弧线
-            for _ in range(random.randint(2, 4)):
-                arc_color = self.get_random_color(100, 190)
-                start_angle = random.randint(0, 360)
-                end_angle = start_angle + random.randint(30, 120)
-                bbox = [
-                    random.randint(0, self.width // 2),
-                    random.randint(0, self.height),
-                    random.randint(self.width // 2, self.width),
-                    random.randint(0, self.height)
-                ]
-                try:
-                    draw.arc(bbox, start_angle, end_angle, fill=arc_color, width=random.randint(1, 2))
-                except:
-                    pass
-            
-            # 应用模糊滤镜
-            if random.random() < 0.4:
-                image = image.filter(ImageFilter.GaussianBlur(radius=random.uniform(0.3, 0.7)))
+        # 绘制中间层干扰线（穿过字符）
+        draw = ImageDraw.Draw(image)
+        for _ in range(random.randint(4, 7)):
+            line_color = self.get_random_color(80, 180)
+            # 绘制穿过验证码中间区域的线条
+            x1 = random.randint(0, self.width)
+            y1 = random.randint(self.height // 4, self.height * 3 // 4)
+            x2 = random.randint(0, self.width)
+            y2 = random.randint(self.height // 4, self.height * 3 // 4)
+            draw.line([(x1, y1), (x2, y2)], fill=line_color, width=random.randint(1, 3))
+        
+        # 绘制顶层干扰线
+        for _ in range(random.randint(3, 6)):
+            line_color = self.get_random_color(120, 200)
+            draw.line([
+                (random.randint(0, self.width), random.randint(0, self.height)),
+                (random.randint(0, self.width), random.randint(0, self.height))
+            ], fill=line_color, width=1)
+        
+        # 添加随机干扰弧线
+        for _ in range(random.randint(2, 4)):
+            arc_color = self.get_random_color(100, 190)
+            start_angle = random.randint(0, 360)
+            end_angle = start_angle + random.randint(30, 120)
+            bbox = [
+                random.randint(0, self.width // 2),
+                random.randint(0, self.height),
+                random.randint(self.width // 2, self.width),
+                random.randint(0, self.height)
+            ]
+            try:
+                draw.arc(bbox, start_angle, end_angle, fill=arc_color, width=random.randint(1, 2))
+            except:
+                pass
+        
+        # 应用模糊滤镜
+        if random.random() < 0.4:
+            image = image.filter(ImageFilter.GaussianBlur(radius=random.uniform(0.3, 0.7)))
         
         return image
     
@@ -301,13 +254,11 @@ class CaptchaGenerator:
         生成验证码图片
         :param text: 验证码文本，如果为None则随机生成
         :param save_path: 保存路径，如果为None则不保存
-        :return: (image, text, answer, filename) 图片对象、验证码文本、答案和文件名
+        :return: (image, text, filename) 图片对象、验证码文本和文件名
         """
-        # 获取验证码文本和答案
+        # 获取验证码文本
         if text is None:
-            text, answer = self.get_random_text()
-        else:
-            answer = text  # 如果手动指定文本，答案就是文本本身
+            text = self.get_random_text()
         
         # 根据模式生成验证码
         if self.mode == 'captcha':
@@ -316,12 +267,7 @@ class CaptchaGenerator:
             image = self.generate_captcha_with_pil(text)
         
         # 生成文件名
-        if self.captcha_type == 'math':
-            # 数学题：使用hex(题目)_答案_hash格式
-            filename = self.generate_filename(text, answer)
-        else:
-            # 普通类型：使用text-hash格式
-            filename = self.generate_filename(text)
+        filename = self.generate_filename(text)
         
         # 保存图片
         if save_path:
@@ -332,7 +278,7 @@ class CaptchaGenerator:
                 filepath = save_path
             image.save(filepath)
         
-        return image, text, answer, filename
+        return image, text, filename
 
 
 if __name__ == '__main__':
@@ -361,7 +307,6 @@ if __name__ == '__main__':
         ('digit', '纯数字', 3),
         ('alpha', '纯字母', 3),
         ('mixed', '数字+字母混合', 3),
-        ('math', '数学算术题（无干扰）', 3),
     ]
     
     total = 0
@@ -376,13 +321,9 @@ if __name__ == '__main__':
         )
         
         for i in range(count):
-            image, text, answer, filename = generator.generate_captcha(save_path=output_dir)
+            image, text, filename = generator.generate_captcha(save_path=output_dir)
             total += 1
-            
-            if captcha_type == 'math':
-                print(f"  [{i+1}/{count}] {filename:<35} | 问题: {text:<12} | 答案: {answer}")
-            else:
-                print(f"  [{i+1}/{count}] {filename:<35} | 内容: {text}")
+            print(f"  [{i+1}/{count}] {filename:<35} | 内容: {text}")
         print()
     
     print("=" * 80)
@@ -394,5 +335,4 @@ if __name__ == '__main__':
     print("  • 纯数字: 仅包含0-9（4位或6位）")
     print("  • 纯字母: 大小写字母混合（4位或6位）")
     print("  • 混合模式: 数字+字母组合（4位或6位，带强干扰）")
-    print("  • 数学题: 一位数运算(5位,如8-2=?) 或 两位数运算(7位,如12*24=?)")
     print("=" * 80)

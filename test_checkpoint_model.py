@@ -194,12 +194,6 @@ class CheckpointCaptchaPredictor:
         confidences = []
         results = []
         
-        # 分类统计
-        math_correct = 0
-        math_total = 0
-        text_correct = 0
-        text_total = 0
-        
         # 逐个预测
         for i, filename in enumerate(image_files, 1):
             image_path = os.path.join(directory, filename)
@@ -218,20 +212,8 @@ class CheckpointCaptchaPredictor:
                     true_text = utils.parse_filename(filename)
                     is_correct = (true_text == predicted_text)
                     
-                    # 判断是否为数学题
-                    is_math = '?' in true_text
-                    
                     if is_correct:
                         correct_count += 1
-                        if is_math:
-                            math_correct += 1
-                        else:
-                            text_correct += 1
-                    
-                    if is_math:
-                        math_total += 1
-                    else:
-                        text_total += 1
                     
                     results.append({
                         'filename': filename,
@@ -239,8 +221,7 @@ class CheckpointCaptchaPredictor:
                         'predicted_text': predicted_text,
                         'confidence': confidence,
                         'inference_time': inference_time,
-                        'is_correct': is_correct,
-                        'is_math': is_math
+                        'is_correct': is_correct
                     })
                 except:
                     # 无法解析真实标签
@@ -250,8 +231,7 @@ class CheckpointCaptchaPredictor:
                         'predicted_text': predicted_text,
                         'confidence': confidence,
                         'inference_time': inference_time,
-                        'is_correct': None,
-                        'is_math': None
+                        'is_correct': None
                     })
                 
                 inference_times.append(inference_time)
@@ -293,16 +273,7 @@ class CheckpointCaptchaPredictor:
             accuracy = correct_count / len(valid_results) * 100
             print(f"\n准确率统计:")
             print(f"  正确数量: {correct_count}/{len(valid_results)}")
-            print(f"  总体准确率: {accuracy:.2f}%")
-            
-            # 分类统计
-            if text_total > 0:
-                text_accuracy = text_correct / text_total * 100
-                print(f"  普通文本准确率: {text_accuracy:.2f}% ({text_correct}/{text_total})")
-            
-            if math_total > 0:
-                math_accuracy = math_correct / math_total * 100
-                print(f"  数学题准确率: {math_accuracy:.2f}% ({math_correct}/{math_total})")
+            print(f"  准确率: {accuracy:.2f}%")
             
             # 显示错误案例
             error_cases = [r for r in valid_results if not r['is_correct']]
@@ -313,7 +284,6 @@ class CheckpointCaptchaPredictor:
                     print(f"     真实: {case['true_text']}")
                     print(f"     预测: {case['predicted_text']}")
                     print(f"     置信度: {case['confidence']:.4f}")
-                    print(f"     类型: {'数学题' if case['is_math'] else '普通文本'}")
                 if len(error_cases) > 10:
                     print(f"  ... 还有 {len(error_cases) - 10} 个错误案例")
         
@@ -324,8 +294,6 @@ class CheckpointCaptchaPredictor:
             'correct_count': correct_count,
             'error_count': error_count,
             'accuracy': accuracy if valid_results else None,
-            'text_accuracy': text_accuracy if text_total > 0 else None,
-            'math_accuracy': math_accuracy if math_total > 0 else None,
             'avg_inference_time': np.mean(inference_times) if inference_times else None,
             'avg_confidence': np.mean(confidences) if confidences else None,
             'results': results
