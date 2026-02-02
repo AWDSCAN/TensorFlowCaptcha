@@ -45,7 +45,9 @@ CHAR_SET = DIGITS + ALPHA_ALL + PADDING_CHAR + MATH_OPERATORS  # 0-9 + A-Z + a-z
 CHAR_SET_LEN = len(CHAR_SET)  # 68个字符 (原63 + 5个运算符)
 
 # 验证码最大长度
-MAX_CAPTCHA = 8  # 支持1-8位不定长验证码（数学题如"19+3=?"是6位）
+# 新规则：支持4位、6位普通验证码，以及5位(一位数运算)和7位(两位数运算)数学题
+# 统一设置为7以支持最长情况（两位数运算如"12*24=?"）
+MAX_CAPTCHA = 7  # 支持4/6位普通验证码，5/7位数学题
 
 # ==================== 模型架构参数 ====================
 # 卷积层配置（三层卷积架构）
@@ -68,12 +70,12 @@ BATCH_SIZE = 128  # 充分利用GPU内存
 # 训练轮数
 EPOCHS = 300  # 足够的训练轮数
 
-# 学习率配置
-LEARNING_RATE = 0.0008  # 初始学习率（降至0.0008，更精细的优化）
-WARMUP_EPOCHS = 15  # Warmup轮数（增加至15，更平滑的启动）
-WARMUP_LR_START = 0.00005  # Warmup起始学习率（更小的起点）
-LR_DECAY_FACTOR = 0.6  # 学习率衰减因子（0.6更平滑）
-LR_DECAY_PATIENCE = 12  # 学习率衰减耐心值（增加至12，更稳定）
+# 学习率配置（余弦退火策略）
+LEARNING_RATE = 0.001  # 初始学习率（最大值）
+LEARNING_RATE_MIN = 0.00001  # 最小学习率（余弦退火的最低点）
+WARMUP_STEPS = 5000  # Warmup步数（前5000步线性增长）
+COSINE_DECAY_STEPS = 150000  # 余弦衰减总步数（约150k步完成一个周期）
+COSINE_ALPHA = 0.01  # 余弦衰减的最小学习率比例（min_lr = alpha * max_lr）
 
 # 验证集比例
 VALIDATION_SPLIT = 0.2

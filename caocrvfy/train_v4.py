@@ -37,7 +37,7 @@ USE_ENHANCED_MODEL = True
 if USE_ENHANCED_MODEL:
     from extras.model_enhanced import create_enhanced_cnn_model as create_model
     from extras.model_enhanced import compile_model, print_model_summary
-    print("使用增强版CNN模型（5层卷积 + BatchNorm + 更大FC层 + 数据增强）")
+    print("使用增强版CNN模型（5层卷积 + BatchNorm + 更大FC层 + 数据增强 + Focal Loss）")
 else:
     from model import create_cnn_model as create_model
     from model import compile_model, print_model_summary
@@ -46,24 +46,40 @@ else:
 
 def save_model(model, save_path=None):
     """
-    保存模型
+    保存完整模型（.keras + checkpoint格式）
     
-    参考：captcha_trainer/trains.py的compile_graph
+    生成文件:
+    - crack_captcha_model.keras  （完整模型）
+    - checkpoint                  （checkpoint元数据）
+    - ckpt-1.index               （变量索引）
+    - ckpt-1.data-00000-of-00001 （变量数据）
     
     参数:
         model: Keras模型
-        save_path: 保存路径
+        save_path: 保存路径（可选，使用默认目录）
     """
-    save_path = save_path or os.path.join(config.MODEL_DIR, 'final_model.keras')
+    from core.model_saver import save_model_complete
     
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    model.save(save_path)
+    # 使用默认模型目录
+    model_dir = save_path or config.MODEL_DIR
+    if os.path.isfile(model_dir):
+        model_dir = os.path.dirname(model_dir)
     
-    print(f"\n✓ 模型已保存到: {save_path}")
+    print(f"\n" + "=" * 80)
+    print("正在保存模型...")
+    print("=" * 80)
     
-    # 保存模型大小
-    model_size = os.path.getsize(save_path) / (1024 ** 2)
-    print(f"模型文件大小: {model_size:.2f} MB")
+    # 保存完整模型
+    saved_files = save_model_complete(model, model_dir, 'crack_captcha_model')
+    
+    print(f"\n✓ 模型保存完成！共 {len(saved_files)} 个文件:")
+    print(f"  目录: {model_dir}")
+    print("\n文件列表:")
+    for filepath in saved_files:
+        filename = os.path.basename(filepath)
+        print(f"  ✓ {filename}")
+    
+    print("=" * 80)
 
 
 def main():
@@ -97,6 +113,14 @@ def main():
     print("步骤 3/5: 创建模型")
     print("-" * 80)
     model = create_model()
+    print("\n🎯 训练策略优化 v2 (余弦退火):")
+    print("   - Focal Loss: 启用 (gamma=2.0, pos_weight=3.0)")
+    print("   - 学习率策略: 余弦退火 (0.001 → 0.00001)")
+    print("   - Warmup: 前5000步")
+    print("   - 余弦周期: 150k步")
+    print("   - 最大步数: 300000")
+    print("   - 目标准确率: 80%")
+    print("   - 预计时间: 4-6小时 (比之前快40%+)")
     
     # 优化策略组合：
     # 1. 使用Focal Loss处理困难样本（gamma=2.0，更关注错误样本）

@@ -13,10 +13,14 @@ Keras模型转ONNX格式
 """
 
 import os
+import sys
 import argparse
 import tensorflow as tf
 import tf2onnx
 import onnx
+
+# 添加项目路径以导入自定义模块
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def convert_keras_to_onnx(keras_model_path, onnx_model_path=None, opset=13):
@@ -50,8 +54,27 @@ def convert_keras_to_onnx(keras_model_path, onnx_model_path=None, opset=13):
     print(f"\n📥 加载Keras模型: {keras_model_path}")
     
     try:
+        # 导入自定义对象（如果存在）
+        custom_objects = {}
+        try:
+            from caocrvfy.extras.model_enhanced import WeightedBinaryCrossentropy
+            custom_objects['WeightedBinaryCrossentropy'] = WeightedBinaryCrossentropy
+            print("   ✓ 已加载自定义损失函数: WeightedBinaryCrossentropy")
+        except ImportError:
+            pass
+        
+        try:
+            from caocrvfy.extras.focal_loss import FocalLoss
+            custom_objects['FocalLoss'] = FocalLoss
+            print("   ✓ 已加载自定义损失函数: FocalLoss")
+        except ImportError:
+            pass
+        
         # 加载Keras模型
-        keras_model = tf.keras.models.load_model(keras_model_path)
+        if custom_objects:
+            keras_model = tf.keras.models.load_model(keras_model_path, custom_objects=custom_objects, compile=False)
+        else:
+            keras_model = tf.keras.models.load_model(keras_model_path, compile=False)
         print("   ✓ Keras模型加载成功")
         
         # 显示模型信息

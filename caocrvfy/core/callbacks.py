@@ -150,8 +150,8 @@ class StepBasedCallbacks(keras.callbacks.Callback):
     
     参考：captcha_trainer/trains.py的achieve_cond逻辑
     """
-    def __init__(self, val_data, model_dir, save_step=100, validation_steps=500,
-                 end_acc=0.95, end_loss=0.01, max_steps=50000, max_checkpoints=5):
+    def __init__(self, val_data, model_dir, save_step=100, validation_steps=300,
+                 end_acc=0.80, end_loss=0.02, max_steps=300000, max_checkpoints=5):
         """
         参数:
             val_data: 验证数据 (X, y)

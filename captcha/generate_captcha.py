@@ -91,53 +91,61 @@ class CaptchaGenerator:
     def get_random_text(self, min_len=4, max_len=8):
         """
         根据类型生成随机验证码文本
+        新规则：验证码长度只有4位或6位
         :return: (text, answer) 验证码文本和答案（算术题会返回答案）
         """
         if self.captcha_type == 'digit':
-            # 纯数字
-            length = random.randint(min_len, max_len)
+            # 纯数字：4位或6位
+            length = random.choice([4, 6])
             text = ''.join(random.choices(self.digits, k=length))
             return text, text
             
         elif self.captcha_type == 'alpha':
-            # 纯字母（大小写混合）
-            length = random.randint(min_len, max_len)
+            # 纯字母（大小写混合）：4位或6位
+            length = random.choice([4, 6])
             text = ''.join(random.choices(self.alpha_all, k=length))
             return text, text
             
         elif self.captcha_type == 'mixed':
-            # 数字+字母混合
-            length = random.randint(min_len, max_len)
+            # 数字+字母混合：4位或6位
+            length = random.choice([4, 6])
             text = ''.join(random.choices(self.charset, k=length))
             return text, text
             
         elif self.captcha_type == 'math':
-            # 数学算术问题
-            num1 = random.randint(1, 20)
-            num2 = random.randint(1, 20)
+            # 数学算术问题：一位数运算(5位) 或 两位数运算(7位)
+            # 50% 概率选择一位数或两位数运算
+            use_two_digits = random.random() < 0.5
+            
+            if use_two_digits:
+                # 两位数与两位数运算（题目长度7位，如"12*24=?"）
+                num1 = random.randint(10, 99)
+                num2 = random.randint(10, 99)
+            else:
+                # 一位数与一位数运算（题目长度5位，如"8-2=?"）
+                num1 = random.randint(1, 9)
+                num2 = random.randint(1, 9)
+            
             operator = random.choice(['+', '-', '*'])
             
             if operator == '+':
                 answer = num1 + num2
                 text = f"{num1}+{num2}=?"
             elif operator == '-':
-                # 确保结果为正数
+                # 确保结果为非负数
                 if num1 < num2:
                     num1, num2 = num2, num1
                 answer = num1 - num2
                 text = f"{num1}-{num2}=?"
             else:  # *
-                # 使用较小的数字避免结果过大
-                num1 = random.randint(1, 10)
-                num2 = random.randint(1, 10)
                 answer = num1 * num2
                 text = f"{num1}*{num2}=?"
             
             return text, str(answer)
         
         else:
-            # 默认混合模式
-            length = random.randint(min_len, max_len)
+            # 默认混合模式：4位或6位
+            length = random.choice([4, 6])
             text = ''.join(random.choices(self.charset, k=length))
             return text, text
     
@@ -383,8 +391,8 @@ if __name__ == '__main__':
     print("=" * 80)
     print()
     print("💡 验证码类型说明:")
-    print("  • 纯数字: 仅包含0-9")
-    print("  • 纯字母: 大小写字母混合")
-    print("  • 混合模式: 数字+字母组合（带强干扰）")
-    print("  • 数学题: 算术运算（无干扰线，便于识别）")
+    print("  • 纯数字: 仅包含0-9（4位或6位）")
+    print("  • 纯字母: 大小写字母混合（4位或6位）")
+    print("  • 混合模式: 数字+字母组合（4位或6位，带强干扰）")
+    print("  • 数学题: 一位数运算(5位,如8-2=?) 或 两位数运算(7位,如12*24=?)")
     print("=" * 80)

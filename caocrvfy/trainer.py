@@ -5,9 +5,52 @@
 功能：封装训练逻辑，确保功能单一性
 """
 
+import tensorflow as tf
 from tensorflow import keras
 from core import config
 from core.data_augmentation import create_augmented_dataset
+
+
+class WarmupCosineDecay(keras.optimizers.schedules.LearningRateSchedule):
+    """
+    Warmup + 余弦退火学习率调度器
+    
+    前期: 线性增长（Warmup）
+    后期: 余弦退火
+    """
+    
+    def __init__(self, cosine_schedule, warmup_steps, warmup_lr_start):
+        super().__init__()
+        self.cosine_schedule = cosine_schedule
+        self.warmup_steps = tf.cast(warmup_steps, tf.float32)
+        self.warmup_lr_start = tf.cast(warmup_lr_start, tf.float32)
+    
+    def __call__(self, step):
+        step = tf.cast(step, tf.float32)
+        
+        # Warmup阶段: 线性增长
+        warmup_lr = (
+            self.warmup_lr_start + 
+            (config.LEARNING_RATE - self.warmup_lr_start) * 
+            (step / self.warmup_steps)
+        )
+        
+        # 余弦退火阶段
+        cosine_lr = self.cosine_schedule(step)
+        
+        # 前warmup_steps使用warmup_lr，之后使用cosine_lr
+        return tf.cond(
+            step < self.warmup_steps,
+            lambda: warmup_lr,
+            lambda: cosine_lr
+        )
+    
+    def get_config(self):
+        return {
+            'cosine_schedule': self.cosine_schedule,
+            'warmup_steps': self.warmup_steps,
+            'warmup_lr_start': self.warmup_lr_start
+        }
 
 
 class CaptchaTrainer:
@@ -35,35 +78,50 @@ class CaptchaTrainer:
     
     def setup_learning_rate_schedule(self, train_data, batch_size):
         """
-        配置学习率调度（参考trains.py的指数衰减策略）
+        配置学习率调度（余弦退火策略）
+        
+        余弦退火优势:
+        1. 前期快速收敛（学习率从高到低）
+        2. 后期精细优化（学习率接近最小值）
+        3. 周期性回升可跳出局部最优
+        4. 与Focal Loss完美搭配
         
         参数:
             train_data: 训练数据 (X, y)
             batch_size: 批次大小
         
         返回:
-            学习率调度器或固定学习率
+            学习率调度器
         """
-        if not self.use_exponential_decay:
-            return config.LEARNING_RATE
-        
-        print("\n🔄 使用指数衰减学习率（参考captcha_trainer/trains.py）")
+        print("\n🔄 使用余弦退火学习率（Cosine Annealing with Warmup）")
         
         # 计算每个epoch的步数
         train_images, train_labels = train_data
         steps_per_epoch = len(train_images) // batch_size
         
-        # 指数衰减：每10000步×0.98（参考trains.py）
-        lr_schedule = keras.optimizers.schedules.ExponentialDecay(
+        # 余弦退火 + Warmup
+        lr_schedule = keras.optimizers.schedules.CosineDecayRestarts(
             initial_learning_rate=config.LEARNING_RATE,
-            decay_steps=10000,
-            decay_rate=0.98,
-            staircase=True
+            first_decay_steps=config.COSINE_DECAY_STEPS,
+            t_mul=1.5,  # 每个周期增长1.5倍
+            m_mul=0.9,  # 每个周期最大学习率衰减至0.9倍
+            alpha=config.COSINE_ALPHA  # 最小学习率比例
         )
         
+        # 包装Warmup
+        if config.WARMUP_STEPS > 0:
+            lr_schedule = WarmupCosineDecay(
+                lr_schedule,
+                warmup_steps=config.WARMUP_STEPS,
+                warmup_lr_start=config.LEARNING_RATE_MIN
+            )
+        
         print(f"  初始学习率: {config.LEARNING_RATE}")
-        print(f"  衰减策略: 每10000步 × 0.98")
+        print(f"  最小学习率: {config.LEARNING_RATE_MIN}")
+        print(f"  Warmup步数: {config.WARMUP_STEPS}")
+        print(f"  余弦周期: {config.COSINE_DECAY_STEPS}步")
         print(f"  每轮步数: {steps_per_epoch}")
+        print(f"  预计100k步时学习率: ~0.0002（精细优化阶段）")
         print()
         
         return lr_schedule
@@ -80,12 +138,13 @@ class CaptchaTrainer:
             from extras.model_enhanced import compile_model
             self.model = compile_model(
                 self.model,
-                use_focal_loss=False,
+                use_focal_loss=True,      # 启用Focal Loss
+                focal_gamma=2.0,          # 提升gamma到2.0
                 pos_weight=3.0,
                 learning_rate=lr_schedule
             )
         else:
-            from model import compile_model
+            from core.model import compile_model
             self.model = compile_model(self.model, learning_rate=lr_schedule)
     
     def prepare_datasets(self, train_data, val_data, batch_size):
@@ -128,22 +187,24 @@ class CaptchaTrainer:
         参考：captcha_trainer的训练配置输出
         """
         print("=" * 80)
-        print("训练策略（v4.0 - 完整参考captcha_trainer/trains.py）:")
-        print("  🔧 核心策略（来自test/captcha_trainer）:")
-        print("     - Step-based验证: 每500步验证一次（而非每epoch）")
-        print("     - 指数衰减学习率: 每10000步 × 0.98（阶梯式衰减）")
-        print("     - 多条件终止: 准确率>=80% AND 损失<=0.05 AND 步数>=10000")
+        print("训练策略（v4.1 - 余弦退火优化版）:")
+        print("  🔧 核心策略:")
+        print("     - Step-based验证: 每300步验证一次")
+        print("     - 余弦退火学习率: 0.001 → 0.00001（周期性衰减）")
+        print("     - Warmup: 前5000步线性增长")
+        print("     - 多条件终止: 准确率>=80% AND 损失<=0.02 AND 步数>=10000")
         print("     - Step-based保存: 每100步保存checkpoint")
         print("  📊 数据处理:")
-        print("     - 数据增强: 亮度/对比度变化 + 随机噪声")
+        print("     - 数据增强: 亮度±12% + 对比度85-115%")
         print("     - 批次大小: 128")
         print("  🎯 模型配置:")
         print("     - 正则化: BatchNorm + Dropout 0.25/0.5")
-        print("     - 损失函数: WeightedBCE (pos_weight=3.0)")
+        print("     - 损失函数: Focal Loss (gamma=2.0) + WeightedBCE (pos_weight=3.0)")
         print("     - 优化器: Adam with AMSGrad")
         print("  ⏱️ 终止条件:")
-        print("     - 完整匹配>=80% AND 损失<=0.05 AND 步数>=10000")
-        print("     - 或超过最大步数50000（防止死循环）")
+        print("     - 完整匹配>=80% AND 损失<=0.02 AND 步数>=10000")
+        print("     - 或超过最大步数300000")
+        print("  ⚡ 预计训练时间: 4-6小时 (余弦退火收敛更快)")
         print("=" * 80)
         print()
     

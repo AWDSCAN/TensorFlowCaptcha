@@ -49,13 +49,13 @@ def augment_image(image, training=True):
     if not training:
         return image
     
-    # 随机应用亮度调整（50%概率，±10%，从±15%减少）
-    if tf.random.uniform([]) > 0.5:
-        image = random_brightness(image, max_delta=0.10)
+    # 随机应用亮度调整（60%概率，±12%）
+    if tf.random.uniform([]) > 0.4:
+        image = random_brightness(image, max_delta=0.12)
     
-    # 随机应用对比度调整（50%概率，90%-110%，从85%-115%收窄）
-    if tf.random.uniform([]) > 0.5:
-        image = random_contrast(image, lower=0.90, upper=1.10)
+    # 随机应用对比度调整（60%概率，85%-115%）
+    if tf.random.uniform([]) > 0.4:
+        image = random_contrast(image, lower=0.85, upper=1.15)
     
     # 【移除】随机噪声（验证码本身已有1000-1500个噪点，不需要额外噪声）
     # 原因：过多噪声会干扰字符特征学习
