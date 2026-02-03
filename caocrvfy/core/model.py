@@ -19,106 +19,25 @@ else:
     from . import config
 
 
-def residual_block(x, filters, stride=1, conv_shortcut=False, name='residual'):
-    """
-    ResNet残差块
-    
-    参数:
-        x: 输入张量
-        filters: 滤波器数量
-        stride: 步长
-        conv_shortcut: 是否使用卷积捷径
-        name: 层名称前缀（默认'residual'）
-    
-    返回:
-        残差块输出
-    """
-    bn_axis = 3  # channels_last格式
-    
-    if conv_shortcut:
-        shortcut = layers.Conv2D(
-            filters,
-            1,
-            strides=stride,
-            padding='same',
-            name=f'{name}_0_conv' if name else None
-        )(x)
-        shortcut = layers.BatchNormalization(
-            axis=bn_axis,
-            name=f'{name}_0_bn' if name else None
-        )(shortcut)
-    else:
-        if stride > 1:
-            shortcut = layers.MaxPooling2D(1, strides=stride)(x)
-        else:
-            shortcut = x
-    
-    # 第一个卷积
-    x = layers.Conv2D(
-        filters,
-        3,
-        strides=stride,
-        padding='same',
-        name=f'{name}_1_conv' if name else None
-    )(x)
-    x = layers.BatchNormalization(axis=bn_axis, name=f'{name}_1_bn' if name else None)(x)
-    x = layers.Activation('relu', name=f'{name}_1_relu' if name else None)(x)
-    
-    # 第二个卷积
-    x = layers.Conv2D(
-        filters,
-        3,
-        padding='same',
-        name=f'{name}_2_conv' if name else None
-    )(x)
-    x = layers.BatchNormalization(axis=bn_axis, name=f'{name}_2_bn' if name else None)(x)
-    
-    # 残差连接
-    x = layers.Add(name=f'{name}_add' if name else None)([shortcut, x])
-    x = layers.Activation('relu', name=f'{name}_out' if name else None)(x)
-    
-    return x
-
-
-def residual_stack(x, filters, blocks, stride=1, name='stack'):
-    """
-    ResNet残差堆叠
-    
-    参数:
-        x: 输入张量
-        filters: 滤波器数量
-        blocks: 残差块数量
-        stride: 第一个块的步长
-        name: 名称前缀（默认'stack'）
-    
-    返回:
-        堆叠输出
-    """
-    # 第一个残差块（可能有stride）
-    x = residual_block(x, filters, stride=stride, conv_shortcut=True, name=f'{name}_block1' if name else 'block1')
-    
-    # 后续残差块
-    for i in range(2, blocks + 1):
-        x = residual_block(x, filters, name=f'{name}_block{i}' if name else f'block{i}')
-    
-    return x
-
-
 def create_cnn_model():
     """
-    创建验证码识别ResNet-34模型
+    创建验证码识别9层卷积神经网络模型
     
     架构:
-        - 初始卷积层: Conv2D(64, 7×7) + BN + ReLU + MaxPool
-        - conv2_x: 3个残差块 × 64 filters
-        - conv3_x: 4个残差块 × 128 filters (stride=2)
-        - conv4_x: 6个残差块 × 256 filters (stride=2)
-        - conv5_x: 3个残差块 × 512 filters (stride=2)
+        - 卷积层1: Conv2D(32, 3×3) + BN + ReLU + MaxPool
+        - 卷积层2: Conv2D(64, 3×3) + BN + ReLU
+        - 卷积层3: Conv2D(64, 3×3) + BN + ReLU + MaxPool
+        - 卷积层4: Conv2D(128, 3×3) + BN + ReLU
+        - 卷积层5: Conv2D(128, 3×3) + BN + ReLU + MaxPool
+        - 卷积层6: Conv2D(256, 3×3) + BN + ReLU
+        - 卷积层7: Conv2D(256, 3×3) + BN + ReLU + MaxPool
+        - 卷积层8: Conv2D(512, 3×3) + BN + ReLU
+        - 卷积层9: Conv2D(512, 3×3) + BN + ReLU + MaxPool
         - 双向LSTM层 (256 units) - 序列建模
         - 全连接层 (2048 units) + Dropout(0.5)
         - 输出层 (OUTPUT_SIZE units)
     
-    总计: 1 + (3+4+6+3)×2 + 1 + 1 = 34层
+    总计: 9层卷积 + LSTM + 全连接，卷积层不使用dropout
     
     返回:
         Keras模型
@@ -129,29 +48,51 @@ def create_cnn_model():
         name='input_image'
     )
     
-    # ==================== Stage 1: 初始卷积 ====================
-    x = layers.Conv2D(
-        64,
-        7,
-        strides=2,
-        padding='same',
-        name='conv1_conv'
-    )(inputs)
-    x = layers.BatchNormalization(axis=3, name='conv1_bn')(x)
-    x = layers.Activation('relu', name='conv1_relu')(x)
-    x = layers.MaxPooling2D(3, strides=2, padding='same', name='pool1_pool')(x)
+    # ==================== 卷积层1-2：32、64 ====================
+    x = layers.Conv2D(32, (3, 3), padding='same', name='conv1')(inputs)
+    x = layers.BatchNormalization(name='bn1')(x)
+    x = layers.Activation('relu', name='relu1')(x)
+    x = layers.MaxPooling2D(pool_size=(2, 2), name='pool1')(x)
     
-    # ==================== Stage 2: conv2_x (3个残差块) ====================
-    x = residual_stack(x, 64, 3, stride=1, name='conv2')
+    x = layers.Conv2D(64, (3, 3), padding='same', name='conv2')(x)
+    x = layers.BatchNormalization(name='bn2')(x)
+    x = layers.Activation('relu', name='relu2')(x)
     
-    # ==================== Stage 3: conv3_x (4个残差块) ====================
-    x = residual_stack(x, 128, 4, stride=2, name='conv3')
+    # ==================== 卷积层3-4：64、128 ====================
+    x = layers.Conv2D(64, (3, 3), padding='same', name='conv3')(x)
+    x = layers.BatchNormalization(name='bn3')(x)
+    x = layers.Activation('relu', name='relu3')(x)
+    x = layers.MaxPooling2D(pool_size=(2, 2), name='pool2')(x)
     
-    # ==================== Stage 4: conv4_x (6个残差块) ====================
-    x = residual_stack(x, 256, 6, stride=2, name='conv4')
+    x = layers.Conv2D(128, (3, 3), padding='same', name='conv4')(x)
+    x = layers.BatchNormalization(name='bn4')(x)
+    x = layers.Activation('relu', name='relu4')(x)
     
-    # ==================== Stage 5: conv5_x (3个残差块) ====================
-    x = residual_stack(x, 512, 3, stride=2, name='conv5')
+    # ==================== 卷积层5-6：128、256 ====================
+    x = layers.Conv2D(128, (3, 3), padding='same', name='conv5')(x)
+    x = layers.BatchNormalization(name='bn5')(x)
+    x = layers.Activation('relu', name='relu5')(x)
+    x = layers.MaxPooling2D(pool_size=(2, 2), name='pool3')(x)
+    
+    x = layers.Conv2D(256, (3, 3), padding='same', name='conv6')(x)
+    x = layers.BatchNormalization(name='bn6')(x)
+    x = layers.Activation('relu', name='relu6')(x)
+    
+    # ==================== 卷积层7-8：256、512 ====================
+    x = layers.Conv2D(256, (3, 3), padding='same', name='conv7')(x)
+    x = layers.BatchNormalization(name='bn7')(x)
+    x = layers.Activation('relu', name='relu7')(x)
+    x = layers.MaxPooling2D(pool_size=(2, 2), name='pool4')(x)
+    
+    x = layers.Conv2D(512, (3, 3), padding='same', name='conv8')(x)
+    x = layers.BatchNormalization(name='bn8')(x)
+    x = layers.Activation('relu', name='relu8')(x)
+    
+    # ==================== 卷积层9：512 ====================
+    x = layers.Conv2D(512, (3, 3), padding='same', name='conv9')(x)
+    x = layers.BatchNormalization(name='bn9')(x)
+    x = layers.Activation('relu', name='relu9')(x)
+    x = layers.MaxPooling2D(pool_size=(2, 2), name='pool5')(x)
     
     # ==================== 序列建模层 ====================
     # 获取特征图的shape进行reshape
@@ -185,26 +126,58 @@ def create_cnn_model():
     )(x)
     
     # 创建模型
-    model = models.Model(inputs=inputs, outputs=outputs, name='captcha_resnet34')
+    model = models.Model(inputs=inputs, outputs=outputs, name='captcha_cnn9')
     
     return model
 
 
-def compile_model(model, learning_rate=None):
+def compile_model(model, learning_rate=None, use_lr_schedule=False, 
+                  use_focal_loss=False, pos_weight=None, focal_gamma=None, **kwargs):
     """
-    编译模型
+    编译模型（使用自适应学习率）
     
     参数:
         model: Keras模型
-        learning_rate: 学习率
+        learning_rate: 初始学习率
+        use_lr_schedule: 是否使用指数衰减学习率调度（默认False，不推荐使用）
+        use_focal_loss: 是否使用Focal Loss（仅用于兼容性，core模型不支持）
+        pos_weight: 正样本权重（仅用于兼容性，core模型不支持）
+        focal_gamma: Focal Loss的gamma参数（仅用于兼容性，core模型不支持）
+        **kwargs: 其他参数（用于兼容性）
     
     返回:
         编译后的模型
-    """
-    lr = learning_rate or config.LEARNING_RATE
     
-    # 优化器
-    optimizer = keras.optimizers.Adam(learning_rate=lr)
+    注：
+        - Adam优化器本身就是自适应学习率算法
+        - 结合callbacks中的AdaptiveLearningRate进行动态调整
+        - 不推荐使用use_lr_schedule，会与AdaptiveLearningRate冲突
+        - use_focal_loss等参数仅用于与model_enhanced的接口兼容
+    """
+    # 如果调用了Focal Loss相关参数，给出警告
+    if use_focal_loss or pos_weight or focal_gamma:
+        print("⚠️  注意：当前使用core.model，不支持Focal Loss")
+        print("    如需使用Focal Loss，请设置 USE_ENHANCED_MODEL = True")
+        print("    将使用标准BinaryCrossentropy损失函数\n")
+    
+    # 如果使用了learning rate schedule，给出警告
+    if use_lr_schedule:
+        print("⚠️  不推荐使用use_lr_schedule，它会与AdaptiveLearningRate冲突")
+        print("    建议使用AdaptiveLearningRate进行自适应调整\n")
+    
+    initial_lr = learning_rate or config.LEARNING_RATE
+    
+    # 使用固定学习率，通过AdaptiveLearningRate进行动态调整
+    lr = initial_lr
+    
+    # 优化器：Adam自适应学习率优化器
+    # Adam = Adaptive Moment Estimation，自动调整每个参数的学习率
+    optimizer = keras.optimizers.Adam(
+        learning_rate=lr,
+        beta_1=0.9,      # 一阶矩估计的指数衰减率
+        beta_2=0.999,    # 二阶矩估计的指数衰减率
+        epsilon=1e-7     # 数值稳定性常数
+    )
     
     # 损失函数：sigmoid交叉熵
     loss = keras.losses.BinaryCrossentropy()
@@ -258,13 +231,13 @@ if __name__ == '__main__':
     
     import config
     
-    print("测试ResNet-34模型创建...")
+    print("测试9层卷积神经网络模型创建...")
     print()
     
     # 创建模型
     model = create_cnn_model()
     
-    # 编译模型
+    # 编译模型（使用自适应学习率）
     model = compile_model(model)
     
     # 打印模型摘要
@@ -290,5 +263,6 @@ if __name__ == '__main__':
     
     print()
     print("=" * 80)
-    print("✓ ResNet-34模型创建测试完成")
+    print("✓ 9层卷积神经网络模型创建测试完成")
+    print("✓ 使用自适应学习率（Adam优化器）")
     print("=" * 80)

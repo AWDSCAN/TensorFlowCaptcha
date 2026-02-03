@@ -64,17 +64,23 @@ class CaptchaTrainer:
     - 执行模型训练
     """
     
-    def __init__(self, model, use_exponential_decay=True):
+    def __init__(self, model, use_exponential_decay=False):
         """
         初始化训练器
         
         参数:
             model: Keras模型
-            use_exponential_decay: 是否使用指数衰减学习率
+            use_exponential_decay: 是否使用指数衰减学习率（默认False，不推荐使用）
+        
+        注意：推荐使用AdaptiveLearningRate而不是指数衰减
         """
         self.model = model
         self.use_exponential_decay = use_exponential_decay
         self.history = None
+        
+        if use_exponential_decay:
+            print("⚠️  不推荐使用指数衰减，它会与AdaptiveLearningRate冲突")
+            print("    建议设置 use_exponential_decay=False\n")
     
     def setup_learning_rate_schedule(self, train_data, batch_size):
         """

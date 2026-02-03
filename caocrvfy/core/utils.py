@@ -67,13 +67,14 @@ def text_to_vector(text):
     return vector
 
 
-def vector_to_text(vector, threshold=0.5):
+def vector_to_text(vector, threshold=0.5, apply_correction=True):
     """
     将one-hot编码向量转换回验证码文本
     
     参数:
         vector: numpy数组，形状为 (MAX_CAPTCHA × CHAR_SET_LEN,) 或 (MAX_CAPTCHA, CHAR_SET_LEN)
         threshold: 置信度阈值，低于此值的预测将被忽略
+        apply_correction: 是否应用数字纠正逻辑（默认True）
     
     返回:
         验证码文本字符串
@@ -101,7 +102,61 @@ def vector_to_text(vector, threshold=0.5):
     
     # 去除尾部的填充字符（空格）
     result = ''.join(text).rstrip(config.PADDING_CHAR)
+    
+    # 应用数字纠正逻辑（针对4位验证码的特殊处理）
+    if apply_correction:
+        result = correct_digit_confusion(result)
+    
     return result
+
+
+def correct_digit_confusion(text):
+    """
+    纠正数字与字母之间的误识别
+    
+    应对策略：
+    - 验证码总共有4位，如果有3位都是数字，那么就认为最后一位也是数字
+    - 这是因为4位纯数字验证码是常见的
+    - 主要解决0和O的混淆问题
+    
+    参数:
+        text: 预测的验证码文本
+    
+    返回:
+        纠正后的验证码文本
+    """
+    # 只对4位验证码进行纠正
+    if len(text) != 4:
+        return text
+    
+    # 统计数字的个数
+    digit_count = sum(1 for c in text if c.isdigit())
+    
+    # 如果有3位是数字，则将非数字字符转换为最相似的数字
+    if digit_count == 3:
+        # 字母到数字的映射（解决常见混淆）
+        letter_to_digit = {
+            'O': '0', 'o': '0',  # O和o -> 0
+            'I': '1', 'i': '1', 'l': '1',  # I、i、l -> 1
+            'Z': '2', 'z': '2',  # Z -> 2
+            'B': '8', 'b': '8',  # B -> 8
+            'S': '5', 's': '5',  # S -> 5
+            'G': '6', 'g': '6',  # G -> 6
+        }
+        
+        corrected = []
+        for char in text:
+            if char.isdigit():
+                corrected.append(char)
+            elif char in letter_to_digit:
+                corrected.append(letter_to_digit[char])
+            else:
+                # 对于未映射的字母，保持原样（避免过度纠正）
+                corrected.append(char)
+        
+        return ''.join(corrected)
+    
+    return text
 
 
 def preprocess_captcha_with_cv2(img):

@@ -14,7 +14,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # 验证码图片目录
 # CAPTCHA_DIR = os.path.join(PROJECT_ROOT, 'captcha', 'img')
-CAPTCHA_DIR = '/data/coding/captcha/img'
+CAPTCHA_DIR = '/home/ubuntu/tensorflowcatpache/captcha/img'
 # 模型保存目录
 MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models')
 
@@ -42,22 +42,23 @@ CHAR_SET = DIGITS + ALPHA_ALL + PADDING_CHAR  # 0-9 + A-Z + a-z + ' '
 CHAR_SET_LEN = len(CHAR_SET)  # 63个字符
 
 # 验证码最大长度
-# 新规则：支持4位、6位普通验证码
-MAX_CAPTCHA = 6  # 支持4/6位普通验证码
+# 新规则：统一为4位长度（纯数字和数字+字母混合）
+MAX_CAPTCHA = 4  # 统一4位长度
 
 # ==================== 模型架构参数 ====================
-# 卷积层配置（三层卷积架构）
-CONV_FILTERS = [32, 64, 64]  # 每层的过滤器数量
+# 卷积层配置（9层卷积架构）
+# 具体配置在model.py中定义：32->64->64->128->128->256->256->512->512
+CONV_FILTERS = [32, 64, 64, 128, 128, 256, 256, 512, 512]  # 每层的过滤器数量
 CONV_KERNEL_SIZE = (3, 3)  # 卷积核大小
 POOL_SIZE = (2, 2)  # 池化层大小
-DROPOUT_CONV = 0.25  # 卷积层Dropout（增强正则化，减少过拟合）
+# 注意：卷积层不使用Dropout，只在全连接层使用
 
 # 全连接层配置
 FC_UNITS = 2048  # 全连接层神经元数量（增加至2048，提升表达能力）
 DROPOUT_FC = 0.5  # 全连接层Dropout（提高至0.5，参考trains.py）
 
 # 输出层配置
-OUTPUT_SIZE = MAX_CAPTCHA * CHAR_SET_LEN  # 8 × 63 = 504
+OUTPUT_SIZE = MAX_CAPTCHA * CHAR_SET_LEN  # 4 × 63 = 252
 
 # ==================== 训练参数 ====================
 # 批次大小
@@ -66,12 +67,14 @@ BATCH_SIZE = 128  # 充分利用GPU内存
 # 训练轮数
 EPOCHS = 300  # 足够的训练轮数
 
-# 学习率配置（余弦退火策略）
-LEARNING_RATE = 0.001  # 初始学习率（最大值）
-LEARNING_RATE_MIN = 0.00001  # 最小学习率（余弦退火的最低点）
-WARMUP_STEPS = 5000  # Warmup步数（前5000步线性增长）
-COSINE_DECAY_STEPS = 150000  # 余弦衰减总步数（约150k步完成一个周期）
-COSINE_ALPHA = 0.01  # 余弦衰减的最小学习率比例（min_lr = alpha * max_lr）
+# 学习率配置（使用AdaptiveLearningRate自适应调整）
+LEARNING_RATE = 0.001  # 初始学习率
+LEARNING_RATE_MIN = 1e-7  # 最小学习率（AdaptiveLearningRate的下限）
+
+# 注意：使用AdaptiveLearningRate回调进行自适应学习率调整
+# - 监控val_loss，无改善时自动降低学习率
+# - 不使用固定的LearningRateSchedule（如ExponentialDecay）
+# - Adam优化器 + AdaptiveLearningRate = 双重自适应
 
 # 验证集比例
 VALIDATION_SPLIT = 0.2

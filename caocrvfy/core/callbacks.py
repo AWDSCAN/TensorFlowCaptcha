@@ -42,6 +42,35 @@ class AdaptiveLearningRate(keras.callbacks.ReduceLROnPlateau):
         self.initial_lr = None
     
     def on_train_begin(self, logs=None):
+        # 检测是否使用了learning rate schedule
+        try:
+            from tensorflow.keras.optimizers.schedules import LearningRateSchedule
+            import tensorflow as tf
+            
+            # 获取optimizer的learning_rate配置
+            lr_config = self.model.optimizer._learning_rate
+            
+            # 检查是否是LearningRateSchedule对象
+            if isinstance(lr_config, LearningRateSchedule):
+                print(f"\n⚠️  检测到使用LearningRateSchedule，禁用AdaptiveLearningRate")
+                print(f"   学习率调度: {type(lr_config).__name__}")
+                print(f"   AdaptiveLearningRate与LearningRateSchedule冲突，将被跳过\n")
+                self._disabled = True
+                return
+            
+            # 尝试调用learning_rate，如果是callable说明可能是schedule
+            lr = self.model.optimizer.learning_rate
+            if callable(lr) and not isinstance(lr, tf.Variable):
+                print(f"\n⚠️  检测到使用LearningRateSchedule，禁用AdaptiveLearningRate")
+                print(f"   AdaptiveLearningRate与LearningRateSchedule冲突，将被跳过\n")
+                self._disabled = True
+                return
+        except Exception as e:
+            # 如果检测失败，尝试调用并捕获错误
+            pass
+        
+        self._disabled = False
+        
         # 记录初始学习率
         try:
             self.initial_lr = float(self.model.optimizer.learning_rate.numpy())
@@ -59,15 +88,29 @@ class AdaptiveLearningRate(keras.callbacks.ReduceLROnPlateau):
         print(f"   最小学习率: {self.min_lr:.2e}\n")
     
     def on_epoch_end(self, epoch, logs=None):
-        # 调用父类逻辑
-        old_lr = float(self.model.optimizer.learning_rate.numpy())
-        super().on_epoch_end(epoch, logs)
-        new_lr = float(self.model.optimizer.learning_rate.numpy())
+        # 如果已被禁用（使用了learning rate schedule），跳过
+        if getattr(self, '_disabled', False):
+            return
         
-        # 如果学习率发生变化，打印详细信息
-        if old_lr != new_lr:
-            reduction_percentage = (1 - new_lr / old_lr) * 100
-            print(f"\n🔻 学习率已调整！")
+        try:
+            # 调用父类逻辑
+            old_lr = float(self.model.optimizer.learning_rate.numpy())
+            super().on_epoch_end(epoch, logs)
+            new_lr = float(self.model.optimizer.learning_rate.numpy())
+            
+            # 如果学习率发生变化，打印详细信息
+            if old_lr != new_lr:
+                reduction_percentage = (1 - new_lr / old_lr) * 100
+                print(f"\n🔻 学习率已调整！")
+                print(f"   {old_lr:.6f} → {new_lr:.6f} (降低 {reduction_percentage:.1f}%)")
+                print(f"   原因: {self.monitor} 在 {self.patience} 轮内无改善")
+        except TypeError as e:
+            # 如果出现TypeError（通常是因为使用了LearningRateSchedule）
+            if "LearningRateSchedule" in str(e) or "not settable" in str(e):
+                print(f"\n⚠️  检测到LearningRateSchedule冲突，禁用AdaptiveLearningRate")
+                self._disabled = True
+            else:
+                raise
             print(f"   {old_lr:.6f} → {new_lr:.6f} (降低 {reduction_percentage:.1f}%)")
             print(f"   原因: {self.monitor} 在 {self.patience} 轮内无改善")
 

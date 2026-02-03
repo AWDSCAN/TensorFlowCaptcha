@@ -152,7 +152,7 @@ def main():
     # 创建训练器（模块化）
     trainer = CaptchaTrainer(
         model=model,
-        use_exponential_decay=True  # 使用指数衰减学习率
+        use_exponential_decay=False  # 不使用指数衰减，使用AdaptiveLearningRate
     )
     
     # 执行训练

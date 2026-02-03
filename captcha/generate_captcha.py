@@ -91,30 +91,23 @@ class CaptchaGenerator:
     def get_random_text(self, min_len=4, max_len=8):
         """
         根据类型生成随机验证码文本
-        新规则：验证码长度只有4位或6位
+        新规则：验证码长度统一为4位
         :return: text 验证码文本
         """
+        length = 4  # 统一长度为4位
+        
         if self.captcha_type == 'digit':
-            # 纯数字：4位或6位
-            length = random.choice([4, 6])
+            # 纯数字：4位
             text = ''.join(random.choices(self.digits, k=length))
             return text
             
-        elif self.captcha_type == 'alpha':
-            # 纯字母（大小写混合）：4位或6位
-            length = random.choice([4, 6])
-            text = ''.join(random.choices(self.alpha_all, k=length))
-            return text
-            
         elif self.captcha_type == 'mixed':
-            # 数字+字母混合：4位或6位
-            length = random.choice([4, 6])
+            # 数字+字母混合：4位
             text = ''.join(random.choices(self.charset, k=length))
             return text
         
         else:
-            # 默认混合模式：4位或6位
-            length = random.choice([4, 6])
+            # 默认混合模式：4位
             text = ''.join(random.choices(self.charset, k=length))
             return text
     
@@ -302,11 +295,10 @@ if __name__ == '__main__':
     print("=" * 80)
     print()
     
-    # 生成各类型验证码
+    # 生成各类型验证码（统一4位长度）
     types_config = [
-        ('digit', '纯数字', 3),
-        ('alpha', '纯字母', 3),
-        ('mixed', '数字+字母混合', 3),
+        ('digit', '纯数字', 5),
+        ('mixed', '数字+字母混合', 5),
     ]
     
     total = 0
@@ -332,7 +324,6 @@ if __name__ == '__main__':
     print("=" * 80)
     print()
     print("💡 验证码类型说明:")
-    print("  • 纯数字: 仅包含0-9（4位或6位）")
-    print("  • 纯字母: 大小写字母混合（4位或6位）")
-    print("  • 混合模式: 数字+字母组合（4位或6位，带强干扰）")
+    print("  • 纯数字: 仅包含0-9（统一4位长度）")
+    print("  • 混合模式: 数字+字母组合（统一4位长度，带强干扰）")
     print("=" * 80)

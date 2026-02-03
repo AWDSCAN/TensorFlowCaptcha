@@ -105,9 +105,22 @@ def create_callbacks(model_dir=None, log_dir=None, val_data=None):
     )
     callbacks.append(tensorboard)
     
+    # 自适应学习率：基于验证损失动态调整（结合Adam的自适应特性）
+    from core.callbacks import AdaptiveLearningRate
+    
+    adaptive_lr = AdaptiveLearningRate(
+        monitor='val_loss',
+        factor=0.5,        # 每次降低50%
+        patience=5,        # 5轮无改善后降低
+        min_lr=1e-7,       # 最小学习率
+        verbose=1
+    )
+    callbacks.append(adaptive_lr)
+    print("  ✓ 已启用AdaptiveLearningRate（基于val_loss动态调整）")
+    
     # 指数衰减学习率（参考trains.py：每10000步×0.98）
-    # TF2使用ExponentialDecay Schedule，不在callbacks中设置
-    # 注意：这里不添加reduce_lr回调，改用自定义学习率调度
+    # TF2使用ExponentialDecay Schedule，在compile_model中设置
+    # 注意：这里不再添加ReduceLROnPlateau回调，已用AdaptiveLearningRate替代
     
     # Step-based验证和保存（参考trains.py：每500步验证，每100步保存）
     class StepBasedCallbacks(keras.callbacks.Callback):
